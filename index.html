@@ -720,6 +720,10 @@
       const HEAD_GRAB_RADIUS = 38;
       const MOBILE_SNAKE_SCALE = 0.5;
       const FOOD_SPEED_PER_COLOR = 0.1;
+      const SNAKE_SPEED_PER_COLOR = 0.05;
+      const SNAKE_SPEED_SCALE_MAX = 1.35;
+      const SCORE_POPUP_LIFE = 0.9;
+      const SCORE_POPUP_LIMIT = 12;
       const BONUS_MIN_BITES = 10;
       const BONUS_MAX_BITES = 20;
       const BONUS_RADIUS = 16;
@@ -733,10 +737,15 @@
       const INVINCIBLE_MUSIC_URL = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Voxel%20Revolution.mp3";
       const INVINCIBLE_MUSIC_CREDIT = "Voxel Revolution by Kevin MacLeod (incompetech.com), licensed CC BY 4.0";
       const INVINCIBLE_MUSIC_FADE_SECONDS = 0.85;
-      const BUILD_NUMBER = 12;
-      const BUILD_DATE = "20260613.2150";
+      const AMBIENT_FALLBACK_VOLUME = 0.05;
+      const MUSIC_STALL_TIMEOUT_MS = 5000;
+      const BEST_SCORE_STORAGE_KEY = "oceanSnakeBest";
+      const MUTED_STORAGE_KEY = "oceanSnakeMuted";
+      const INTRO_SEEN_STORAGE_KEY = "oceanSnakeIntroSeen";
+      const BUILD_NUMBER = 13;
+      const BUILD_DATE = "20260703";
       const INTRO_TITLE = "How to Play";
-      const DESKTOP_INTRO_COPY = "Drag the snake's head, steer with WASD, or use a connected controller.\nEat fish to grow, score, and shift colors.\nEat quickly to build combos and score multipliers.\nAvoid walls and your own body.\nCatch the magic fish for invincibility: you can pass through yourself for 5 bites or until the next color.\nMagic fish appear every 10-20 bites, move fast, and can slip through your body.";
+      const DESKTOP_INTRO_COPY = "Drag the snake's head, steer with WASD or the arrow keys, or use a connected controller.\nPress Space to start or pause, M to mute, R to restart.\nEat fish to grow, score, and shift colors.\nEat quickly to build combos and score multipliers.\nAvoid walls and your own body.\nCatch the magic fish for invincibility: you can pass through yourself for 5 bites or until the next color.\nMagic fish appear every 10-20 bites, move fast, and can slip through your body.";
       const MOBILE_INTRO_COPY = "Use the joystick or a connected controller for speed and direction, or drag inside the arena to guide the snake's head.\nEat fish to grow, score, and shift colors.\nEat quickly to build combos and score multipliers.\nAvoid walls and your own body.\nCatch the magic fish for invincibility: you can pass through yourself for 5 bites or until the next color.\nMagic fish appear every 10-20 bites, move fast, and can slip through your body.";
       const FOOD_THEMES = [
         { main: "#ffcf5a", accent: "#ff7a59", glow: "rgba(255, 207, 90, 0.72)" },
@@ -755,6 +764,18 @@
       const lerp = (start, end, amount) => start + (end - start) * amount;
       const unitFromAngle = (angle) => ({ x: Math.cos(angle), y: Math.sin(angle) });
       const nextBonusCountdown = () => Math.floor(rnd(BONUS_MIN_BITES, BONUS_MAX_BITES + 1));
+      const readStoredFlag = (key) => {
+        try {
+          return localStorage.getItem(key) === "1";
+        } catch (error) {
+          return false;
+        }
+      };
+      const writeStoredFlag = (key, value) => {
+        try {
+          localStorage.setItem(key, value ? "1" : "0");
+        } catch (error) {}
+      };
 
       let snake;
       let food;
@@ -776,7 +797,7 @@
       let comboMultiplier;
       let comboExpiresAt;
       let score;
-      let best = Number(localStorage.getItem("oceanSnakeBest") || 0);
+      let best = Number(localStorage.getItem(BEST_SCORE_STORAGE_KEY) || 0);
       let gameState;
       let dragging;
       let activePointerId;
@@ -792,7 +813,7 @@
       let gamepadButtonStates = [];
       let resizeFrame;
       let paused;
-      let muted;
+      let muted = readStoredFlag(MUTED_STORAGE_KEY);
       let lastFrame;
       let pulse;
       let audioCtx;
@@ -803,9 +824,12 @@
       let musicFadeFrame;
       let musicStarted;
       let invincibleMusicUnlocked;
-      let introShown;
+      let ambientNodes;
+      let musicStallTimer;
+      let introShown = readStoredFlag(INTRO_SEEN_STORAGE_KEY);
       let oceanParticles;
       let biteParticles;
+      let scorePopups;
       let oceanFlow;
       let targetOceanFlow;
       let oceanLight;
@@ -852,6 +876,7 @@
         foodLevelBites = 0;
         resetCombo();
         biteParticles = [];
+        scorePopups = [];
         cameraFlow = { x: 0, y: 0 };
         targetCameraFlow = { x: 0, y: 0 };
         createOcean();
@@ -873,6 +898,7 @@
         if (!introShown) {
           setOverlay(INTRO_TITLE, introCopy());
           introShown = true;
+          writeStoredFlag(INTRO_SEEN_STORAGE_KEY, true);
         } else {
           setOverlay("Ready", "The first bite is waiting.");
         }
@@ -1009,6 +1035,9 @@
         if (biteParticles) {
           biteParticles.forEach((particle) => scalePointToArena(particle, scaleX, scaleY));
         }
+        if (scorePopups) {
+          scorePopups.forEach((popup) => scalePointToArena(popup, scaleX, scaleY));
+        }
       }
 
       function syncArenaSize() {
@@ -1069,6 +1098,11 @@
         track.title = config.credit;
         track.setAttribute("playsinline", "");
         track.setAttribute("webkit-playsinline", "");
+        track.addEventListener("error", syncAmbientFallback);
+        track.addEventListener("canplay", () => {
+          track.oceanSnakeStalled = false;
+          syncAmbientFallback();
+        });
         return track;
       }
 
@@ -1157,6 +1191,7 @@
             fadeMusicTo(config.volume, INVINCIBLE_MUSIC_FADE_SECONDS);
           }
         }
+        syncAmbientFallback();
       }
 
       function startMusic() {
@@ -1167,10 +1202,13 @@
         ensureMusicTrack();
         currentMusicTrack.muted = false;
         currentMusicTrack.play().catch(() => {});
+        scheduleMusicStallCheck();
+        syncAmbientFallback();
       }
 
       function syncMusicMute() {
         updateMuteIcon();
+        syncAmbientFallback();
         ensureMusicTracks();
         Object.values(musicTracks).forEach((track) => {
           track.muted = muted;
@@ -1194,6 +1232,11 @@
       function stopMusic() {
         musicStarted = false;
         cancelMusicFade();
+        if (musicStallTimer) {
+          clearTimeout(musicStallTimer);
+          musicStallTimer = null;
+        }
+        syncAmbientFallback();
         if (!musicTracks) return;
         Object.values(musicTracks).forEach((track) => {
           track.pause();
@@ -1201,6 +1244,103 @@
         });
         currentMusicTrack = musicTracks.normal;
         musicMode = "normal";
+      }
+
+      function currentMusicUnavailable() {
+        const track = currentMusicTrack || (musicTracks && musicTracks[musicMode || "normal"]);
+        return !!track && (!!track.error || !!track.oceanSnakeStalled);
+      }
+
+      function scheduleMusicStallCheck() {
+        if (musicStallTimer) clearTimeout(musicStallTimer);
+        musicStallTimer = setTimeout(() => {
+          musicStallTimer = null;
+          const track = currentMusicTrack;
+          if (musicStarted && track && !track.error && track.readyState < 2) {
+            track.oceanSnakeStalled = true;
+          }
+          syncAmbientFallback();
+        }, MUSIC_STALL_TIMEOUT_MS);
+      }
+
+      function applyAmbientMode() {
+        if (!ambientNodes || !audioCtx) return;
+        try {
+          const invincible = musicMode === "invincible";
+          const now = audioCtx.currentTime;
+          ambientNodes.filter.frequency.setTargetAtTime(invincible ? 1250 : 620, now, 0.4);
+          ambientNodes.lfo.frequency.setTargetAtTime(invincible ? 0.22 : 0.06, now, 0.4);
+        } catch (error) {}
+      }
+
+      function startAmbientLoop() {
+        if (ambientNodes) return;
+        try {
+          if (!ensureAudioContext()) return;
+          resumeAudioContext();
+          const now = audioCtx.currentTime;
+          const master = audioCtx.createGain();
+          master.gain.setValueAtTime(0.0001, now);
+          master.gain.exponentialRampToValueAtTime(AMBIENT_FALLBACK_VOLUME, now + 2.4);
+
+          const filter = audioCtx.createBiquadFilter();
+          filter.type = "lowpass";
+          filter.frequency.setValueAtTime(620, now);
+          filter.Q.setValueAtTime(0.6, now);
+          filter.connect(master).connect(audioCtx.destination);
+
+          const lfo = audioCtx.createOscillator();
+          const lfoGain = audioCtx.createGain();
+          lfo.frequency.setValueAtTime(0.06, now);
+          lfoGain.gain.setValueAtTime(180, now);
+          lfo.connect(lfoGain).connect(filter.frequency);
+          lfo.start(now);
+
+          const voices = [55, 82.41, 110, 164.81].map((frequency, index) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = index % 2 ? "triangle" : "sine";
+            osc.frequency.setValueAtTime(frequency, now);
+            osc.detune.setValueAtTime((index - 1.5) * 5, now);
+            gain.gain.setValueAtTime(0.22 - index * 0.035, now);
+            osc.connect(gain).connect(filter);
+            osc.start(now);
+            return osc;
+          });
+
+          ambientNodes = { master, filter, lfo, voices };
+          applyAmbientMode();
+        } catch (error) {
+          ambientNodes = null;
+        }
+      }
+
+      function stopAmbientLoop() {
+        if (!ambientNodes) return;
+        const nodes = ambientNodes;
+        ambientNodes = null;
+        try {
+          const now = audioCtx.currentTime;
+          nodes.master.gain.cancelScheduledValues(now);
+          nodes.master.gain.setValueAtTime(Math.max(0.0001, nodes.master.gain.value), now);
+          nodes.master.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+        } catch (error) {}
+        setTimeout(() => {
+          try {
+            nodes.voices.forEach((osc) => osc.stop());
+            nodes.lfo.stop();
+            nodes.master.disconnect();
+          } catch (error) {}
+        }, 600);
+      }
+
+      function syncAmbientFallback() {
+        if (musicStarted && !muted && currentMusicUnavailable()) {
+          startAmbientLoop();
+          applyAmbientMode();
+        } else {
+          stopAmbientLoop();
+        }
       }
 
       function getCanvasPoint(event) {
@@ -1614,6 +1754,10 @@
         return FOOD_STEP * (1 + foodLevel * FOOD_SPEED_PER_COLOR);
       }
 
+      function snakeSpeedScale() {
+        return Math.min(SNAKE_SPEED_SCALE_MAX, 1 + foodLevel * SNAKE_SPEED_PER_COLOR);
+      }
+
       function createOcean() {
         oceanParticles = Array.from({ length: OCEAN_PARTICLE_COUNT }, (_, index) => {
           const seed = index + 1;
@@ -1735,6 +1879,39 @@
         }
       }
 
+      function spawnScorePopup(point, points, multiplier, theme) {
+        if (!scorePopups || !point) return;
+
+        const margin = 40 * snakeScale() + 12;
+        scorePopups.push({
+          x: clamp(point.x, margin, Math.max(margin, ARENA.width - margin)),
+          y: clamp(point.y - foodRadius() * 1.6, 26, Math.max(26, ARENA.height - 14)),
+          text: multiplier > 1 ? `+${points} x${multiplier}` : `+${points}`,
+          color: theme.main,
+          glow: theme.glow,
+          age: 0,
+          life: SCORE_POPUP_LIFE
+        });
+
+        if (scorePopups.length > SCORE_POPUP_LIMIT) {
+          scorePopups.splice(0, scorePopups.length - SCORE_POPUP_LIMIT);
+        }
+      }
+
+      function updateScorePopups(dt) {
+        if (!scorePopups || !scorePopups.length) return;
+
+        for (let i = scorePopups.length - 1; i >= 0; i -= 1) {
+          const popup = scorePopups[i];
+          popup.age += dt;
+          if (popup.age >= popup.life) {
+            scorePopups.splice(i, 1);
+            continue;
+          }
+          popup.y -= (34 + 20 * (1 - popup.age / popup.life)) * snakeScale() * dt;
+        }
+      }
+
       function startDrag(event) {
         if (joystickActive) return;
         if (event.button !== undefined && event.button !== 0) return;
@@ -1814,12 +1991,17 @@
           w: { x: 0, y: -1 },
           a: { x: -1, y: 0 },
           s: { x: 0, y: 1 },
-          d: { x: 1, y: 0 }
+          d: { x: 1, y: 0 },
+          arrowup: { x: 0, y: -1 },
+          arrowleft: { x: -1, y: 0 },
+          arrowdown: { x: 0, y: 1 },
+          arrowright: { x: 1, y: 0 }
         };
         const direction = directions[key];
 
-        if (!direction || dragging || joystickActive) return;
+        if (!direction) return;
         event.preventDefault();
+        if (dragging || joystickActive) return;
 
         if (gameState === "over") {
           reset();
@@ -1829,6 +2011,35 @@
         heading = direction;
         target = { ...snake[0] };
         setStatus("Steering", "#8bd3ff");
+      }
+
+      function handleActionKey(event) {
+        if (event.repeat) return;
+        if (event.target && event.target.closest && event.target.closest("button")) return;
+        const key = event.key === " " ? "space" : event.key.toLowerCase();
+
+        if (key === "space") {
+          event.preventDefault();
+          if (gameState === "over") {
+            reset();
+            startPlaying();
+            setStatus("Coasting", "#8bd3ff");
+          } else if (gameState === "ready") {
+            startPlaying();
+            setStatus("Coasting", "#8bd3ff");
+          } else {
+            togglePause();
+          }
+          return;
+        }
+
+        if (key === "p") {
+          togglePause();
+        } else if (key === "m") {
+          toggleMute();
+        } else if (key === "r") {
+          reset();
+        }
       }
 
       function moveDrag(event) {
@@ -1943,7 +2154,7 @@
       function moveHeadWithJoystick() {
         if (joystickPower <= 0) return;
         const head = snake[0];
-        const speed = lerp(JOYSTICK_MIN_STEP, JOYSTICK_MAX_STEP, joystickPower);
+        const speed = lerp(JOYSTICK_MIN_STEP, JOYSTICK_MAX_STEP, joystickPower) * snakeSpeedScale();
         advanceHead({
           x: head.x + joystickVector.x * speed,
           y: head.y + joystickVector.y * speed
@@ -1953,7 +2164,7 @@
       function moveHeadWithGamepad() {
         if (gamepadPower <= 0) return;
         const head = snake[0];
-        const speed = lerp(GAMEPAD_MIN_STEP, GAMEPAD_MAX_STEP, gamepadPower);
+        const speed = lerp(GAMEPAD_MIN_STEP, GAMEPAD_MAX_STEP, gamepadPower) * snakeSpeedScale();
         advanceHead({
           x: head.x + gamepadVector.x * speed,
           y: head.y + gamepadVector.y * speed
@@ -1962,9 +2173,10 @@
 
       function moveHeadIdle() {
         const head = snake[0];
+        const speed = IDLE_STEP * snakeSpeedScale();
         advanceHead({
-          x: head.x + heading.x * IDLE_STEP,
-          y: head.y + heading.y * IDLE_STEP
+          x: head.x + heading.x * speed,
+          y: head.y + heading.y * speed
         });
       }
 
@@ -2234,6 +2446,7 @@
         scoreEl.textContent = score;
         growSnake();
         spawnBiteBurst(eatenFood, eatenTheme);
+        spawnScorePopup(eatenFood, points, combo.multiplier, eatenTheme);
         biteSelfGraceDistance = Math.max(biteSelfGraceDistance, biteSelfGraceLimit());
         foodLevelBites += 1;
         bonusBiteCountdown -= 1;
@@ -2322,7 +2535,7 @@
         pendingInvincibleBites = 0;
         invincibleWarningUntil = 0;
         best = Math.max(best, score);
-        localStorage.setItem("oceanSnakeBest", String(best));
+        localStorage.setItem(BEST_SCORE_STORAGE_KEY, String(best));
         bestEl.textContent = best;
         setOverlay("Game Over", `Score ${score} / Best ${best}`);
         setStatus("Collision", "#ff5f6d");
@@ -3002,6 +3215,30 @@
         ctx.restore();
       }
 
+      function drawScorePopups() {
+        if (!scorePopups || !scorePopups.length) return;
+
+        const fontSize = Math.max(13, Math.round(17 * snakeScale() + 4));
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = `700 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
+        scorePopups.forEach((popup) => {
+          const progress = popup.age / popup.life;
+          const fadeIn = Math.min(1, progress / 0.12);
+          const fadeOut = Math.pow(1 - Math.max(0, (progress - 0.12) / 0.88), 1.3);
+          ctx.globalAlpha = fadeIn * fadeOut;
+          ctx.shadowColor = popup.glow;
+          ctx.shadowBlur = 14;
+          ctx.strokeStyle = "rgba(3, 19, 31, 0.55)";
+          ctx.lineWidth = 3;
+          ctx.strokeText(popup.text, popup.x, popup.y);
+          ctx.fillStyle = popup.color;
+          ctx.fillText(popup.text, popup.x, popup.y);
+        });
+        ctx.restore();
+      }
+
       function draw() {
         drawArena();
         drawFood();
@@ -3009,6 +3246,7 @@
         drawBiteParticles();
         drawTargetLine();
         drawSnake();
+        drawScorePopups();
       }
 
       function togglePause() {
@@ -3035,6 +3273,7 @@
         if (!paused && gameState !== "over") {
           moveOcean(dt);
           updateBiteParticles(dt);
+          updateScorePopups(dt);
         }
 
         if (gameState === "playing" && !paused) {
@@ -3052,7 +3291,7 @@
           if (gameState === "playing") {
             moveFood();
             moveBonusFood();
-            checkFood();
+            checkFood(); // not redundant with advanceHead: a fish can swim into a stationary head
             settleInvincibilityBites();
           }
         }
@@ -3061,16 +3300,17 @@
         requestAnimationFrame(frame);
       }
 
-      pauseBtn.addEventListener("click", togglePause);
-
-      muteBtn.addEventListener("click", () => {
+      function toggleMute() {
         muted = !muted;
+        writeStoredFlag(MUTED_STORAGE_KEY, muted);
         if (!muted) {
           unlockSfxAudio();
         }
         syncMusicMute();
-      });
+      }
 
+      pauseBtn.addEventListener("click", togglePause);
+      muteBtn.addEventListener("click", toggleMute);
       restartBtn.addEventListener("click", reset);
       joystick.addEventListener("pointerdown", startJoystick);
       joystick.addEventListener("pointermove", moveJoystick);
@@ -3085,6 +3325,7 @@
         if (dragging && event.buttons === 0) endDrag(event);
       });
       window.addEventListener("keydown", steerWithKey);
+      window.addEventListener("keydown", handleActionKey);
       window.addEventListener("gamepadconnected", handleGamepadConnected);
       window.addEventListener("gamepaddisconnected", handleGamepadDisconnected);
       window.addEventListener("resize", scheduleArenaSync);
