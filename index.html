@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#06324b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Ocean Snake">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/ocean-snake-logo.ico" sizes="any">
   <title>Ocean Snake</title>
   <style>
     :root {
@@ -3091,6 +3097,13 @@
       reset();
       syncMusicMute();
       requestAnimationFrame(frame);
+
+      if ("serviceWorker" in navigator && window.isSecureContext) {
+        window.addEventListener("load", () => {
+          const serviceWorkerPath = "./service-worker" + ".js";
+          navigator.serviceWorker.register(serviceWorkerPath).catch(() => {});
+        });
+      }
     })();
   </script>
 </body>

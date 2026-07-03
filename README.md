@@ -7,6 +7,8 @@ You can try a live playable version of this game here: https://html.cafe/x726e33
 ## Features
 
 - Single-file game runtime in `index.html`
+- Installable PWA metadata for Android and desktop browsers
+- Offline cache through `service-worker.js` when served from a static HTTPS host
 - Responsive desktop and mobile layout
 - Mouse, touch, WASD, and gamepad input
 - Pause, mute, and restart controls
@@ -19,11 +21,17 @@ You can try a live playable version of this game here: https://html.cafe/x726e33
 ```text
 .
 |-- index.html
+|-- manifest.webmanifest
+|-- service-worker.js
 |-- assets/
 |   |-- ocean-snake-logo-header.png
 |   |-- ocean-snake-logo.ico
 |   |-- ocean-snake-logo.png
-|   `-- ocean-snake-mascot-source.png
+|   |-- ocean-snake-mascot-source.png
+|   |-- pwa-icon-192.png
+|   |-- pwa-icon-512.png
+|   |-- pwa-maskable-192.png
+|   `-- pwa-maskable-512.png
 |-- deploy-htmlcafe.ps1
 |-- .gitignore
 `-- README.md
@@ -55,7 +63,48 @@ http://localhost:8000
 
 ## Deployment
 
+### PWA on GitHub Pages
+
+Use GitHub Pages as the default free PWA host. It serves the app as normal static files over HTTPS, which is required for Android install and service-worker offline support.
+
+1. Push this repository to GitHub.
+2. In the GitHub repository, open **Settings > Pages**.
+3. Set **Build and deployment** to **Deploy from a branch**.
+4. Select the branch that contains this project, usually `main`, and choose `/ (root)` as the folder.
+5. Save the setting and wait for GitHub Pages to publish the site.
+6. Open the published URL on Android Chrome, then use **Install app** or **Add to Home screen**.
+
+Expected URL shape:
+
+```text
+https://<github-user>.github.io/<repo-name>/
+```
+
+The PWA files are:
+
+- `manifest.webmanifest`: install metadata, theme colors, and icons
+- `service-worker.js`: offline cache for the app shell and local assets
+- `assets/pwa-*.png`: Android install icons derived from the existing logo
+
+To test locally, use a web server rather than opening the file directly:
+
+```powershell
+python -m http.server 8000
+```
+
+Then open:
+
+```text
+http://localhost:8000
+```
+
+Chrome treats `localhost` as a secure context, so service-worker registration works during local testing.
+
+### HTML.cafe
+
 The deploy script builds a self-contained HTML artifact and can upload it to HTML.cafe.
+
+HTML.cafe remains useful for quick sharing, but it is not the full PWA deployment path because the current flow uploads one standalone HTML payload instead of separately hosted `manifest.webmanifest` and `service-worker.js` files.
 
 Build locally without uploading:
 
