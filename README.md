@@ -2,6 +2,8 @@
 
 Ocean Snake is a polished, responsive browser snake game built as a single HTML file. It has pointer-drag steering, mobile joystick controls, WASD keyboard movement, gamepad support, animated ocean visuals, sound controls, and a persistent best score stored in `localStorage`.
 
+You can try a live playable version of this game here: https://html.cafe/x726e33d0
+
 ## Features
 
 - Single-file game runtime in `index.html`
