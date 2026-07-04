@@ -1190,6 +1190,7 @@
           if (fadeIn) {
             fadeMusicTo(config.volume, INVINCIBLE_MUSIC_FADE_SECONDS);
           }
+          scheduleMusicStallCheck();
         }
         syncAmbientFallback();
       }
