@@ -742,8 +742,8 @@
       const BEST_SCORE_STORAGE_KEY = "oceanSnakeBest";
       const MUTED_STORAGE_KEY = "oceanSnakeMuted";
       const INTRO_SEEN_STORAGE_KEY = "oceanSnakeIntroSeen";
-      const BUILD_NUMBER = 13;
-      const BUILD_DATE = "20260703";
+      const BUILD_NUMBER = 14;
+      const BUILD_DATE = "20260704";
       const INTRO_TITLE = "How to Play";
       const DESKTOP_INTRO_COPY = "Drag the snake's head, steer with WASD or the arrow keys, or use a connected controller.\nPress Space to start or pause, M to mute, R to restart.\nEat fish to grow, score, and shift colors.\nEat quickly to build combos and score multipliers.\nAvoid walls and your own body.\nCatch the magic fish for invincibility: you can pass through yourself for 5 bites or until the next color.\nMagic fish appear every 10-20 bites, move fast, and can slip through your body.";
       const MOBILE_INTRO_COPY = "Use the joystick or a connected controller for speed and direction, or drag inside the arena to guide the snake's head.\nEat fish to grow, score, and shift colors.\nEat quickly to build combos and score multipliers.\nAvoid walls and your own body.\nCatch the magic fish for invincibility: you can pass through yourself for 5 bites or until the next color.\nMagic fish appear every 10-20 bites, move fast, and can slip through your body.";
@@ -2346,11 +2346,22 @@
         const ctx = ensureAudioContext();
         if (!ctx) return;
 
-        const resumeAttempt = resumeAudioContext();
-        if (sfxUnlocked) return;
+        resumeAudioContext();
+
+        // iOS/WebKit (this includes Chrome on iPhone) frequently ignores the
+        // first in-gesture resume, leaving the whole first game silent until a
+        // later gesture. Replay the canonical silent-buffer unlock on every
+        // gesture until the context is truly "running", then stop.
+        if (sfxUnlocked && ctx.state === "running") return;
 
         try {
           const now = ctx.currentTime;
+
+          const source = ctx.createBufferSource();
+          source.buffer = ctx.createBuffer(1, 1, ctx.sampleRate || 44100);
+          source.connect(ctx.destination);
+          source.start(now);
+
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
           osc.type = "sine";
@@ -2360,13 +2371,8 @@
           osc.connect(gain).connect(ctx.destination);
           osc.start(now);
           osc.stop(now + 0.035);
-          sfxUnlocked = true;
 
-          if (resumeAttempt && typeof resumeAttempt.catch === "function") {
-            resumeAttempt.catch(() => {
-              sfxUnlocked = false;
-            });
-          }
+          sfxUnlocked = true;
         } catch (error) {
           sfxUnlocked = false;
         }
@@ -3278,6 +3284,11 @@
         }
 
         if (gameState === "playing" && !paused) {
+          // A context created during the first gesture can stay "suspended"
+          // until it is resumed again in a later task. Retry every frame while
+          // playing (sticky activation keeps this valid) so the first game is
+          // audible instead of silent until a second interaction.
+          resumeAudioContext();
           headMotion = 0;
           if (joystickActive) {
             moveHeadWithJoystick();
@@ -3327,6 +3338,20 @@
       });
       window.addEventListener("keydown", steerWithKey);
       window.addEventListener("keydown", handleActionKey);
+
+      // Prime/resume the audio context on the earliest real user gesture, and
+      // keep retrying on every discrete gesture until it is running. This is
+      // what makes sound work on the FIRST play (notably iOS/WebKit, incl.
+      // Chrome on iPhone) instead of only after a second interaction.
+      ["pointerdown", "pointerup", "touchstart", "touchend", "mousedown", "keydown"].forEach((type) => {
+        window.addEventListener(type, unlockSfxAudio, { capture: true, passive: true });
+      });
+      // Cheap resume during a continuous drag/hold — on iOS a move is still
+      // inside the active gesture, so this rescues a single unbroken joystick
+      // hold that never fires a second discrete gesture.
+      ["pointermove", "touchmove"].forEach((type) => {
+        window.addEventListener(type, resumeAudioContext, { capture: true, passive: true });
+      });
       window.addEventListener("gamepadconnected", handleGamepadConnected);
       window.addEventListener("gamepaddisconnected", handleGamepadDisconnected);
       window.addEventListener("resize", scheduleArenaSync);
