@@ -1,4 +1,4 @@
-const CACHE_NAME = "ocean-snake-pwa-v1";
+const CACHE_NAME = "ocean-snake-pwa-v2";
 
 const CORE_ASSETS = [
   "./",
