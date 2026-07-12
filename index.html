@@ -287,6 +287,10 @@
       transform: translateY(1px);
     }
 
+    .icon-button[hidden] {
+      display: none;
+    }
+
     .icon-button svg {
       width: 21px;
       height: 21px;
@@ -504,13 +508,13 @@
       .controls {
         grid-column: 2;
         grid-row: 2;
-        gap: 6px;
+        gap: 4px;
         justify-content: flex-end;
       }
 
       .icon-button {
-        width: 44px;
-        height: 44px;
+        width: 40px;
+        height: 40px;
       }
     }
 
@@ -651,6 +655,13 @@
             <path d="M18.5 5.5a9 9 0 0 1 0 13"></path>
           </svg>
         </button>
+        <button class="icon-button" id="hapticsBtn" type="button" aria-label="Disable haptics" title="Disable haptics" hidden>
+          <svg id="hapticsIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="7" y="4" width="10" height="16" rx="2"></rect>
+            <path d="M4 9v6"></path>
+            <path d="M20 9v6"></path>
+          </svg>
+        </button>
         <button class="icon-button" id="restartBtn" type="button" aria-label="Restart" title="Restart">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 12a9 9 0 1 0 3-6.7"></path>
@@ -676,6 +687,8 @@
       const pauseIcon = document.getElementById("pauseIcon");
       const muteBtn = document.getElementById("muteBtn");
       const muteIcon = document.getElementById("muteIcon");
+      const hapticsBtn = document.getElementById("hapticsBtn");
+      const hapticsIcon = document.getElementById("hapticsIcon");
       const restartBtn = document.getElementById("restartBtn");
       const joystick = document.getElementById("joystick");
       const joystickThumb = document.getElementById("joystickThumb");
@@ -733,8 +746,23 @@
       const INVINCIBLE_MUSIC_URL = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Voxel%20Revolution.mp3";
       const INVINCIBLE_MUSIC_CREDIT = "Voxel Revolution by Kevin MacLeod (incompetech.com), licensed CC BY 4.0";
       const INVINCIBLE_MUSIC_FADE_SECONDS = 0.85;
-      const BUILD_NUMBER = 12;
-      const BUILD_DATE = "20260613.2150";
+      const HAPTICS_STORAGE_KEY = "oceanSnakeHapticsEnabled";
+      const HAPTIC_PATTERNS = Object.freeze({
+        bite: {
+          device: 24,
+          gamepad: { duration: 55, strongMagnitude: 0.08, weakMagnitude: 0.34 }
+        },
+        reward: {
+          device: [38, 42, 62],
+          gamepad: { duration: 150, strongMagnitude: 0.46, weakMagnitude: 0.68 }
+        },
+        collision: {
+          device: [80, 55, 130],
+          gamepad: { duration: 285, strongMagnitude: 1, weakMagnitude: 0.42 }
+        }
+      });
+      const BUILD_NUMBER = 13;
+      const BUILD_DATE = "20260711.2249";
       const INTRO_TITLE = "How to Play";
       const DESKTOP_INTRO_COPY = "Drag the snake's head, steer with WASD, or use a connected controller.\nEat fish to grow, score, and shift colors.\nEat quickly to build combos and score multipliers.\nAvoid walls and your own body.\nCatch the magic fish for invincibility: you can pass through yourself for 5 bites or until the next color.\nMagic fish appear every 10-20 bites, move fast, and can slip through your body.";
       const MOBILE_INTRO_COPY = "Use the joystick or a connected controller for speed and direction, or drag inside the arena to guide the snake's head.\nEat fish to grow, score, and shift colors.\nEat quickly to build combos and score multipliers.\nAvoid walls and your own body.\nCatch the magic fish for invincibility: you can pass through yourself for 5 bites or until the next color.\nMagic fish appear every 10-20 bites, move fast, and can slip through your body.";
@@ -793,6 +821,8 @@
       let resizeFrame;
       let paused;
       let muted;
+      let hapticsEnabled = localStorage.getItem(HAPTICS_STORAGE_KEY) !== "false";
+      let lastControlSource = "device";
       let lastFrame;
       let pulse;
       let audioCtx;
@@ -905,6 +935,15 @@
         muteIcon.innerHTML = muted
           ? '<path d="M11 5 6 9H3v6h3l5 4V5z"></path><path d="m16 9 5 5"></path><path d="m21 9-5 5"></path>'
           : '<path d="M11 5 6 9H3v6h3l5 4V5z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path>';
+      }
+
+      function updateHapticsIcon() {
+        hapticsBtn.setAttribute("aria-label", hapticsEnabled ? "Disable haptics" : "Enable haptics");
+        hapticsBtn.setAttribute("aria-pressed", String(hapticsEnabled));
+        hapticsBtn.title = hapticsEnabled ? "Disable haptics" : "Enable haptics";
+        hapticsIcon.innerHTML = hapticsEnabled
+          ? '<rect x="7" y="4" width="10" height="16" rx="2"></rect><path d="M4 9v6"></path><path d="M20 9v6"></path>'
+          : '<rect x="7" y="4" width="10" height="16" rx="2"></rect><path d="m4 4 16 16"></path>';
       }
 
       function isMobileLayout() {
@@ -1250,6 +1289,110 @@
         }
       }
 
+      function deviceHapticsAvailable() {
+        return typeof navigator.vibrate === "function";
+      }
+
+      function gamepadHapticActuator(gamepad) {
+        const actuator = gamepad && gamepad.vibrationActuator;
+        if (!actuator || typeof actuator.playEffect !== "function") return null;
+
+        try {
+          if (
+            typeof actuator.canPlayEffectType === "function" &&
+            !actuator.canPlayEffectType("dual-rumble")
+          ) {
+            return null;
+          }
+        } catch (error) {
+          return null;
+        }
+
+        return actuator;
+      }
+
+      function gamepadHapticsAvailable() {
+        return getConnectedGamepads().some((gamepad) => !!gamepadHapticActuator(gamepad));
+      }
+
+      function updateHapticsAvailability() {
+        hapticsBtn.hidden = !(deviceHapticsAvailable() || gamepadHapticsAvailable());
+        updateHapticsIcon();
+      }
+
+      let hapticSequence = 0;
+
+      function stopHaptics() {
+        hapticSequence += 1;
+
+        if (deviceHapticsAvailable()) {
+          try {
+            navigator.vibrate(0);
+          } catch (error) {
+            // Haptics are always optional.
+          }
+        }
+
+        getConnectedGamepads().forEach((gamepad) => {
+          const actuator = gamepadHapticActuator(gamepad);
+          if (!actuator || typeof actuator.reset !== "function") return;
+          try {
+            const resetAttempt = actuator.reset();
+            if (resetAttempt && typeof resetAttempt.catch === "function") {
+              resetAttempt.catch(() => {});
+            }
+          } catch (error) {
+            // Haptics are always optional.
+          }
+        });
+      }
+
+      function playGamepadHaptic(actuator, effect, sequence) {
+        try {
+          const resetAttempt = typeof actuator.reset === "function"
+            ? actuator.reset()
+            : null;
+
+          Promise.resolve(resetAttempt)
+            .catch(() => {})
+            .then(() => {
+              if (sequence !== hapticSequence || !hapticsEnabled || document.hidden) return null;
+              return actuator.playEffect("dual-rumble", {
+                startDelay: 0,
+                duration: effect.duration,
+                strongMagnitude: effect.strongMagnitude,
+                weakMagnitude: effect.weakMagnitude
+              });
+            })
+            .catch(() => {});
+          return true;
+        } catch (error) {
+          return false;
+        }
+      }
+
+      function playHaptic(event) {
+        const pattern = HAPTIC_PATTERNS[event];
+        if (!pattern || !hapticsEnabled || document.hidden) return false;
+
+        const sequence = ++hapticSequence;
+
+        if (lastControlSource === "gamepad") {
+          const actuator = gamepadHapticActuator(selectGamepad());
+          if (actuator) {
+            return playGamepadHaptic(actuator, pattern.gamepad, sequence);
+          }
+        }
+
+        if (!deviceHapticsAvailable()) return false;
+
+        try {
+          return navigator.vibrate(pattern.device);
+        } catch (error) {
+          return false;
+        }
+      }
+
       function selectGamepad() {
         const gamepads = getConnectedGamepads();
         if (!gamepads.length) return null;
@@ -1321,6 +1464,7 @@
       }
 
       function activateGamepadButton() {
+        lastControlSource = "gamepad";
         if (gameState === "over") {
           reset();
         }
@@ -1339,6 +1483,7 @@
         }
 
         if (justPressed(GAMEPAD_BUTTON_MENU)) {
+          lastControlSource = "gamepad";
           if (gameState === "ready") {
             activateGamepadButton();
           } else {
@@ -1379,6 +1524,7 @@
 
         const wasActive = gamepadActive;
         gamepadActive = true;
+        lastControlSource = "gamepad";
         gamepadVector = control.vector;
         gamepadPower = Math.pow(control.power, GAMEPAD_RESPONSE_EXPONENT);
 
@@ -1395,6 +1541,7 @@
       function handleGamepadConnected(event) {
         gamepadIndex = event.gamepad.index;
         gamepadButtonStates = [];
+        updateHapticsAvailability();
         if (gameState === "ready") {
           setStatus("Controller ready", "#8bd3ff");
         }
@@ -1405,6 +1552,7 @@
         gamepadIndex = null;
         gamepadButtonStates = [];
         resetGamepadControl(true);
+        updateHapticsAvailability();
         if (gameState === "ready") {
           setStatus("Ready", "#31d0aa");
         }
@@ -1461,6 +1609,7 @@
         }
 
         cancelCanvasDrag();
+        lastControlSource = "device";
         joystickActive = true;
         joystickPointerId = event.pointerId;
         joystick.classList.add("active");
@@ -1739,6 +1888,7 @@
         if (joystickActive) return;
         if (event.button !== undefined && event.button !== 0) return;
         event.preventDefault();
+        lastControlSource = "device";
         const point = getCanvasPoint(event);
         const touchControl = isTouchControl(event);
 
@@ -1820,6 +1970,7 @@
 
         if (!direction || dragging || joystickActive) return;
         event.preventDefault();
+        lastControlSource = "device";
 
         if (gameState === "over") {
           reset();
@@ -2093,6 +2244,7 @@
         pendingInvincibleBites = 0;
         switchMusic("invincible");
         setStatus(`Invincible ${invincibleBitesRemaining}`, "#c9a7ff");
+        playHaptic("reward");
         rewardBiteSound();
       }
 
@@ -2265,8 +2417,10 @@
           setStatus(levelUp ? "Color up" : comboStatus(combo, points), currentFoodTheme().main);
         }
         if (levelUp) {
+          playHaptic("reward");
           rewardBiteSound(combo);
         } else {
+          playHaptic("bite");
           snackBite(combo);
         }
       }
@@ -2327,6 +2481,7 @@
         setOverlay("Game Over", `Score ${score} / Best ${best}`);
         setStatus("Collision", "#ff5f6d");
         stopMusic();
+        playHaptic("collision");
         failureSound();
       }
 
@@ -3071,6 +3226,15 @@
         syncMusicMute();
       });
 
+      hapticsBtn.addEventListener("click", () => {
+        hapticsEnabled = !hapticsEnabled;
+        localStorage.setItem(HAPTICS_STORAGE_KEY, String(hapticsEnabled));
+        if (!hapticsEnabled) {
+          stopHaptics();
+        }
+        updateHapticsIcon();
+      });
+
       restartBtn.addEventListener("click", reset);
       joystick.addEventListener("pointerdown", startJoystick);
       joystick.addEventListener("pointermove", moveJoystick);
@@ -3096,6 +3260,7 @@
       syncArenaSize();
       reset();
       syncMusicMute();
+      updateHapticsAvailability();
       requestAnimationFrame(frame);
 
       if ("serviceWorker" in navigator && window.isSecureContext) {

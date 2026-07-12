@@ -1,6 +1,6 @@
 # Ocean Snake
 
-Ocean Snake is a polished, responsive browser snake game built as a single HTML file. It has pointer-drag steering, mobile joystick controls, WASD keyboard movement, gamepad support, animated ocean visuals, sound controls, and a persistent best score stored in `localStorage`.
+Ocean Snake is a polished, responsive browser snake game built as a single HTML file. It has pointer-drag steering, mobile joystick controls, WASD keyboard movement, gamepad support, animated ocean visuals, sound and haptic controls, and a persistent best score stored in `localStorage`.
 
 You can try a live playable version of this game here: https://html.cafe/x726e33d0
 
@@ -11,7 +11,8 @@ You can try a live playable version of this game here: https://html.cafe/x726e33
 - Offline cache through `service-worker.js` when served from a static HTTPS host
 - Responsive desktop and mobile layout
 - Mouse, touch, WASD, and gamepad input
-- Pause, mute, and restart controls
+- Capability-detected vibration and gamepad rumble for key gameplay events
+- Pause, mute, haptics, and restart controls
 - Local best-score persistence
 - Local image assets in `assets/`
 - HTML.cafe deployment script with optional asset inlining and WebP optimization
@@ -59,7 +60,13 @@ http://localhost:8000
 - Mobile: use the on-screen joystick
 - Keyboard: `W`, `A`, `S`, `D`
 - Gamepad: analog stick or D-pad
-- Buttons: pause, mute, restart
+- Buttons: pause, mute, haptics (when supported), restart
+
+## Haptic Feedback
+
+Haptics are enabled by default on supported devices and can be switched off independently from sound. Ordinary fish, magic fish or color upgrades, and collisions use distinct feedback. The game uses the standard Vibration API for compatible mobile browsers and dual-rumble feedback for compatible gamepads.
+
+Browsers that do not expose a haptic API continue without vibration and hide the haptics button. In particular, iPhone Safari does not currently provide a reliable web API for device vibration; an attached compatible gamepad can still provide rumble.
 
 ## Deployment
 
