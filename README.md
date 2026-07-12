@@ -10,10 +10,11 @@ You can try a live playable version of this game here: https://html.cafe/x726e33
 - Installable PWA metadata for Android and desktop browsers
 - Offline cache through `service-worker.js` when served from a static HTTPS host
 - Responsive desktop and mobile layout
-- Mouse, touch, WASD, and gamepad input
+- Mouse, touch, keyboard (WASD or arrow keys), and gamepad input
 - Capability-detected vibration and gamepad rumble for key gameplay events
-- Pause, mute, haptics, and restart controls
-- Local best-score persistence
+- Pause, mute, haptics, and restart controls with keyboard shortcuts
+- Local best-score and settings persistence
+- Synthesized ambient music fallback when streaming audio is unavailable
 - Local image assets in `assets/`
 - HTML.cafe deployment script with optional asset inlining and WebP optimization
 
@@ -58,7 +59,8 @@ http://localhost:8000
 
 - Mouse or touch: drag the snake head
 - Mobile: use the on-screen joystick
-- Keyboard: `W`, `A`, `S`, `D`
+- Keyboard: `W`, `A`, `S`, `D` or the arrow keys
+- Keyboard shortcuts: `Space` start/pause, `P` pause, `M` mute, `R` restart
 - Gamepad: analog stick or D-pad
 - Buttons: pause, mute, haptics (when supported), restart
 
