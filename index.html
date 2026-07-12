@@ -701,6 +701,10 @@
       const HEAD_RADIUS = 17;
       const BODY_RADIUS = 13;
       const FOOD_RADIUS = 13;
+      const NOMINAL_SIMULATION_FPS = 60;
+      const MAX_SIMULATION_STEP_SECONDS = 1 / NOMINAL_SIMULATION_FPS;
+      const MAX_FRAME_DELTA_SECONDS = 0.05;
+      const MAX_RENDER_DPR = 3;
       const STEP = 6;
       const IDLE_STEP = 1.45;
       const FOOD_STEP = 1.05;
@@ -726,6 +730,8 @@
       const OCEAN_BASE_SPEED = 18;
       const BITE_BURST_PARTICLES = 18;
       const BITE_BURST_LIFE = 0.62;
+      const SCORE_POPUP_LIFE = 0.9;
+      const SCORE_POPUP_LIMIT = 12;
       const SEGMENT_GAP = 16;
       const START_LENGTH = 19;
       const GROWTH_PER_BITE = 6;
@@ -735,8 +741,6 @@
       const FOOD_SPEED_PER_COLOR = 0.1;
       const SNAKE_SPEED_PER_COLOR = 0.05;
       const SNAKE_SPEED_SCALE_MAX = 1.35;
-      const SCORE_POPUP_LIFE = 0.9;
-      const SCORE_POPUP_LIMIT = 12;
       const BONUS_MIN_BITES = 10;
       const BONUS_MAX_BITES = 20;
       const BONUS_RADIUS = 16;
@@ -840,11 +844,14 @@
       let gamepadPower = 0;
       let gamepadButtonStates = [];
       let resizeFrame;
+      let renderDpr = 1;
       let paused;
+      let pauseStartedAt = 0;
       let muted = readStoredFlag(MUTED_STORAGE_KEY);
       let hapticsEnabled = localStorage.getItem(HAPTICS_STORAGE_KEY) !== "false";
       let lastControlSource = "device";
       let lastFrame;
+      let frameDeltaSeconds = MAX_SIMULATION_STEP_SECONDS;
       let pulse;
       let audioCtx;
       let sfxUnlocked;
@@ -919,6 +926,7 @@
         resetJoystick();
         resetGamepadControl();
         paused = false;
+        pauseStartedAt = 0;
         lastFrame = performance.now();
         pulse = 0;
         canvas.classList.remove("dragging");
@@ -1087,21 +1095,32 @@
               height: Math.max(1, Math.round(rect.height))
             }
           : DESKTOP_ARENA;
+        const nextRenderDpr = clamp(window.devicePixelRatio || 1, 1, MAX_RENDER_DPR);
+        const nextBackingWidth = Math.max(1, Math.round(next.width * nextRenderDpr));
+        const nextBackingHeight = Math.max(1, Math.round(next.height * nextRenderDpr));
+        const logicalSizeChanged =
+          Math.abs(ARENA.width - next.width) >= 2 ||
+          Math.abs(ARENA.height - next.height) >= 2;
+        const backingSizeChanged =
+          canvas.width !== nextBackingWidth ||
+          canvas.height !== nextBackingHeight;
 
-        if (
-          Math.abs(canvas.width - next.width) < 2 &&
-          Math.abs(canvas.height - next.height) < 2
-        ) {
+        if (!logicalSizeChanged && !backingSizeChanged && renderDpr === nextRenderDpr) {
           return;
         }
 
         const previousArena = { width: ARENA.width, height: ARENA.height };
-        canvas.width = next.width;
-        canvas.height = next.height;
         ARENA.width = next.width;
         ARENA.height = next.height;
-        scaleWorld(previousArena);
-        if (typeof foodLevel === "number") {
+        renderDpr = nextRenderDpr;
+        canvas.width = nextBackingWidth;
+        canvas.height = nextBackingHeight;
+        ctx.setTransform(renderDpr, 0, 0, renderDpr, 0, 0);
+
+        if (logicalSizeChanged) {
+          scaleWorld(previousArena);
+        }
+        if (logicalSizeChanged && typeof foodLevel === "number") {
           updateOceanFlow(true);
         }
       }
@@ -1220,10 +1239,11 @@
 
       function switchMusic(mode) {
         if (musicMode === mode) return;
-        const fadeIn = mode === "invincible" && musicStarted && !muted;
+        const canPlay = musicStarted && !muted && !paused && !document.hidden;
+        const fadeIn = mode === "invincible" && canPlay;
         const config = musicConfig(mode);
         ensureMusicTrack(mode, fadeIn);
-        if (musicStarted && !muted) {
+        if (canPlay) {
           currentMusicTrack.currentTime = 0;
           currentMusicTrack.play().catch(() => {});
           if (fadeIn) {
@@ -1238,9 +1258,39 @@
         musicStarted = true;
         ensureMusicTracks();
         unlockInvincibleMusicTrack();
-        if (muted) return;
+        if (muted || paused || document.hidden) return;
         ensureMusicTrack();
         currentMusicTrack.muted = false;
+        currentMusicTrack.play().catch(() => {});
+        scheduleMusicStallCheck();
+        syncAmbientFallback();
+      }
+
+      function suspendGameAudio() {
+        cancelMusicFade();
+        if (musicTracks) {
+          Object.values(musicTracks).forEach((track) => track.pause());
+        }
+        if (audioCtx && audioCtx.state === "running") {
+          try {
+            const suspendAttempt = audioCtx.suspend();
+            if (suspendAttempt && typeof suspendAttempt.catch === "function") {
+              suspendAttempt.catch(() => {});
+            }
+          } catch (error) {}
+        }
+      }
+
+      function resumeGameAudio() {
+        if (muted || paused || document.hidden) return;
+        resumeAudioContext();
+        if (!musicStarted) return;
+        ensureMusicTrack();
+        if (musicMode !== "invincible") {
+          unlockInvincibleMusicTrack();
+        }
+        currentMusicTrack.muted = false;
+        currentMusicTrack.volume = musicConfig().volume;
         currentMusicTrack.play().catch(() => {});
         scheduleMusicStallCheck();
         syncAmbientFallback();
@@ -1253,20 +1303,11 @@
         Object.values(musicTracks).forEach((track) => {
           track.muted = muted;
         });
-        if (!muted && musicStarted) {
-          unlockInvincibleMusicTrack();
-        }
-        if (!currentMusicTrack && musicStarted && !muted) {
-          startMusic();
+        if (muted || paused || document.hidden) {
+          suspendGameAudio();
           return;
         }
-        if (!currentMusicTrack) return;
-        currentMusicTrack.muted = muted;
-        if (muted) {
-          currentMusicTrack.pause();
-        } else if (musicStarted) {
-          currentMusicTrack.play().catch(() => {});
-        }
+        resumeGameAudio();
       }
 
       function stopMusic() {
@@ -1375,7 +1416,7 @@
       }
 
       function syncAmbientFallback() {
-        if (musicStarted && !muted && currentMusicUnavailable()) {
+        if (musicStarted && !muted && !paused && !document.hidden && currentMusicUnavailable()) {
           startAmbientLoop();
           applyAmbientMode();
         } else {
@@ -1497,7 +1538,7 @@
           Promise.resolve(resetAttempt)
             .catch(() => {})
             .then(() => {
-              if (sequence !== hapticSequence || !hapticsEnabled || document.hidden) return null;
+              if (sequence !== hapticSequence || !hapticsEnabled || paused || document.hidden) return null;
               return actuator.playEffect("dual-rumble", {
                 startDelay: 0,
                 duration: effect.duration,
@@ -1514,7 +1555,7 @@
 
       function playHaptic(event) {
         const pattern = HAPTIC_PATTERNS[event];
-        if (!pattern || !hapticsEnabled || document.hidden) return false;
+        if (!pattern || !hapticsEnabled || paused || document.hidden) return false;
 
         const sequence = ++hapticSequence;
 
@@ -2105,9 +2146,7 @@
         unlockSfxAudio();
 
         if (paused) {
-          paused = false;
-          updatePauseIcon();
-          setOverlay("", "");
+          setPaused(false);
         }
 
         if (gameState === "ready") {
@@ -2255,12 +2294,12 @@
         }
       }
 
-      function advanceHead(next) {
+      function advanceHead(next, frameScale = 1) {
         const previous = { ...snake[0] };
         addHeadPoint(next);
         const movement = dist(previous, next);
         headMotion += movement;
-        updateCameraFlow(previous, next);
+        updateCameraFlow(previous, next, frameScale);
         checkFood();
         if (checkCollision()) {
           endGame();
@@ -2271,12 +2310,13 @@
         return true;
       }
 
-      function updateCameraFlow(previous, next) {
+      function updateCameraFlow(previous, next, frameScale = 1) {
         const dx = next.x - previous.x;
         const dy = next.y - previous.y;
+        const normalizedScale = Math.max(0.001, frameScale);
         targetCameraFlow = {
-          x: -dx * 13,
-          y: -dy * 13
+          x: -(dx / normalizedScale) * 13,
+          y: -(dy / normalizedScale) * 13
         };
       }
 
@@ -2303,41 +2343,44 @@
         }
       }
 
-      function moveHeadWithJoystick() {
+      function moveHeadWithJoystick(dt) {
         if (joystickPower <= 0) return;
         const head = snake[0];
-        const speed = lerp(JOYSTICK_MIN_STEP, JOYSTICK_MAX_STEP, joystickPower) * snakeSpeedScale();
+        const frameScale = dt * NOMINAL_SIMULATION_FPS;
+        const speed = lerp(JOYSTICK_MIN_STEP, JOYSTICK_MAX_STEP, joystickPower) * snakeSpeedScale() * frameScale;
         advanceHead({
           x: head.x + joystickVector.x * speed,
           y: head.y + joystickVector.y * speed
-        });
+        }, frameScale);
       }
 
-      function moveHeadWithGamepad() {
+      function moveHeadWithGamepad(dt) {
         if (gamepadPower <= 0) return;
         const head = snake[0];
-        const speed = lerp(GAMEPAD_MIN_STEP, GAMEPAD_MAX_STEP, gamepadPower) * snakeSpeedScale();
+        const frameScale = dt * NOMINAL_SIMULATION_FPS;
+        const speed = lerp(GAMEPAD_MIN_STEP, GAMEPAD_MAX_STEP, gamepadPower) * snakeSpeedScale() * frameScale;
         advanceHead({
           x: head.x + gamepadVector.x * speed,
           y: head.y + gamepadVector.y * speed
-        });
+        }, frameScale);
       }
 
-      function moveHeadIdle() {
+      function moveHeadIdle(dt) {
         const head = snake[0];
-        const speed = IDLE_STEP * snakeSpeedScale();
+        const frameScale = dt * NOMINAL_SIMULATION_FPS;
+        const speed = IDLE_STEP * snakeSpeedScale() * frameScale;
         advanceHead({
           x: head.x + heading.x * speed,
           y: head.y + heading.y * speed
-        });
+        }, frameScale);
       }
 
-      function moveFood() {
+      function moveFood(dt) {
         if (gameState === "over") return;
 
         const previous = { ...food };
         const radius = foodRadius();
-        const speed = currentFoodSpeed();
+        const speed = currentFoodSpeed() * dt * NOMINAL_SIMULATION_FPS;
         food.x += foodVelocity.x * speed;
         food.y += foodVelocity.y * speed;
 
@@ -2368,9 +2411,10 @@
         }
       }
 
-      function moveBonusFood() {
+      function moveBonusFood(dt) {
         if (!bonusFood || gameState === "over") return;
 
+        const frameScale = dt * NOMINAL_SIMULATION_FPS;
         const head = snake[0];
         const radius = bonusRadius();
         const awayX = bonusFood.x - head.x;
@@ -2404,10 +2448,12 @@
         };
 
         const len = Math.hypot(desired.x, desired.y) || 1;
-        bonusVelocity.x = desired.x / len;
-        bonusVelocity.y = desired.y / len;
+        const turnAmount = clamp(frameScale, 0, 1);
+        bonusVelocity.x = lerp(bonusVelocity.x, desired.x / len, turnAmount);
+        bonusVelocity.y = lerp(bonusVelocity.y, desired.y / len, turnAmount);
+        normalizeBonusVelocity();
 
-        const speed = currentFoodSpeed() * BONUS_SPEED_MULTIPLIER;
+        const speed = currentFoodSpeed() * BONUS_SPEED_MULTIPLIER * frameScale;
         bonusFood.x += bonusVelocity.x * speed;
         bonusFood.y += bonusVelocity.y * speed;
 
@@ -2443,10 +2489,11 @@
         bonusVelocity.y /= len;
       }
 
-      function smoothBonusAngle() {
+      function smoothBonusAngle(dt = frameDeltaSeconds) {
         const targetAngle = Math.atan2(bonusVelocity.y, bonusVelocity.x);
         const delta = Math.atan2(Math.sin(targetAngle - bonusAngle), Math.cos(targetAngle - bonusAngle));
-        bonusAngle += delta * 0.12;
+        const turnAmount = 1 - Math.pow(1 - 0.12, dt * NOMINAL_SIMULATION_FPS);
+        bonusAngle += delta * turnAmount;
         return bonusAngle;
       }
 
@@ -3405,26 +3452,107 @@
         drawScorePopups();
       }
 
-      function togglePause() {
-        if (gameState === "over") return;
-        paused = !paused;
+      function setPaused(nextPaused, reason = "manual") {
+        if (gameState === "over" || paused === nextPaused) return false;
+
+        const now = performance.now();
+        paused = nextPaused;
         updatePauseIcon();
         if (paused) {
-          setOverlay("Paused", "The arena is holding its breath.");
-          setStatus("Paused", "#8bd3ff");
+          pauseStartedAt = now;
+          cancelCanvasDrag();
+          resetJoystick();
+          resetGamepadControl();
+          stopHaptics();
+          suspendGameAudio();
+          if (reason === "lifecycle") {
+            setOverlay("Paused", "The game moved into the background. Resume when you're ready.");
+            setStatus("Paused in background", "#8bd3ff");
+          } else {
+            setOverlay("Paused", "The arena is holding its breath.");
+            setStatus("Paused", "#8bd3ff");
+          }
         } else {
+          const pausedFor = pauseStartedAt ? Math.max(0, now - pauseStartedAt) : 0;
+          if (comboExpiresAt > 0) comboExpiresAt += pausedFor;
+          if (invincibleWarningUntil > 0) invincibleWarningUntil += pausedFor;
+          pauseStartedAt = 0;
+          lastFrame = now;
+          frameDeltaSeconds = 0;
           setOverlay("", "");
           setStatus(gameState === "ready" ? "Ready" : "Hunting", "#31d0aa");
+          resumeGameAudio();
+        }
+        return true;
+      }
+
+      function togglePause() {
+        setPaused(!paused);
+      }
+
+      function pauseForLifecycle() {
+        lastFrame = performance.now();
+        frameDeltaSeconds = 0;
+        cancelCanvasDrag();
+        resetJoystick();
+        resetGamepadControl();
+        stopHaptics();
+
+        if (gameState === "playing" && !paused) {
+          setPaused(true, "lifecycle");
+        } else {
+          suspendGameAudio();
+        }
+      }
+
+      function returnFromLifecycle() {
+        lastFrame = performance.now();
+        frameDeltaSeconds = 0;
+        if (!paused) {
+          resumeGameAudio();
+        }
+      }
+
+      function handleVisibilityChange() {
+        if (document.hidden) {
+          pauseForLifecycle();
+        } else {
+          returnFromLifecycle();
+        }
+      }
+
+      function simulateGameplay(dt) {
+        if (joystickActive) {
+          moveHeadWithJoystick(dt);
+        } else if (gamepadActive) {
+          moveHeadWithGamepad(dt);
+        } else if (dragging) {
+          moveHeadTowardTarget();
+        } else {
+          moveHeadIdle(dt);
+        }
+
+        if (gameState === "playing") {
+          moveFood(dt);
+          moveBonusFood(dt);
+          checkFood();
+          settleInvincibilityBites();
         }
       }
 
       function frame(now) {
-        const dt = Math.min(0.05, (now - lastFrame) / 1000);
+        const dt = Math.min(
+          MAX_FRAME_DELTA_SECONDS,
+          Math.max(0, (now - lastFrame) / 1000)
+        );
         lastFrame = now;
+        frameDeltaSeconds = dt;
         pulse += dt;
         pollGamepad();
-        expireComboIfNeeded();
-        updateInvincibilityWarning();
+        if (!paused) {
+          expireComboIfNeeded();
+          updateInvincibilityWarning();
+        }
 
         if (!paused && gameState !== "over") {
           moveOcean(dt);
@@ -3434,21 +3562,11 @@
 
         if (gameState === "playing" && !paused) {
           headMotion = 0;
-          if (joystickActive) {
-            moveHeadWithJoystick();
-          } else if (gamepadActive) {
-            moveHeadWithGamepad();
-          } else if (dragging) {
-            moveHeadTowardTarget();
-          } else {
-            moveHeadIdle();
-          }
-
-          if (gameState === "playing") {
-            moveFood();
-            moveBonusFood();
-            checkFood(); // not redundant with advanceHead: a fish can swim into a stationary head
-            settleInvincibilityBites();
+          let remainingTime = dt;
+          while (remainingTime > 0.000001 && gameState === "playing" && !paused) {
+            const simulationStep = Math.min(MAX_SIMULATION_STEP_SECONDS, remainingTime);
+            simulateGameplay(simulationStep);
+            remainingTime -= simulationStep;
           }
         }
 
@@ -3494,6 +3612,11 @@
       window.addEventListener("gamepaddisconnected", handleGamepadDisconnected);
       window.addEventListener("resize", scheduleArenaSync);
       window.addEventListener("orientationchange", scheduleArenaSync);
+      window.addEventListener("blur", pauseForLifecycle);
+      window.addEventListener("focus", returnFromLifecycle);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("pagehide", pauseForLifecycle);
+      window.addEventListener("pageshow", returnFromLifecycle);
       if (MOBILE_LAYOUT_QUERY.addEventListener) {
         MOBILE_LAYOUT_QUERY.addEventListener("change", scheduleArenaSync);
       }
