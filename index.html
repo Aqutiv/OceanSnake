@@ -809,8 +809,8 @@
           { duration: 150, gap: 0, strongMagnitude: 0.62, weakMagnitude: 0.5 }
         ]
       });
-      const BUILD_NUMBER = 18;
-      const BUILD_DATE = "20260717.0002";
+      const BUILD_NUMBER = 19;
+      const BUILD_DATE = "20260717.0003";
       const INTRO_TITLE = "How to Play";
       const DESKTOP_INTRO_COPY = "Steer by dragging, with WASD or the arrow keys, or with a controller.\nDualSense: Cross starts, Options pauses, Square restarts, and Triangle toggles haptics; enable its touchpad for relative drag steering.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
       const MOBILE_INTRO_COPY = "Steer with the joystick, by dragging in the arena, or with a connected controller.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
@@ -4087,9 +4087,17 @@
       requestAnimationFrame(frame);
 
       if ("serviceWorker" in navigator && window.isSecureContext) {
+        let reloadingForServiceWorker = false;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (reloadingForServiceWorker) return;
+          reloadingForServiceWorker = true;
+          window.location.reload();
+        });
         window.addEventListener("load", () => {
           const serviceWorkerPath = "./service-worker" + ".js";
-          navigator.serviceWorker.register(serviceWorkerPath).catch(() => {});
+          navigator.serviceWorker.register(serviceWorkerPath, { updateViaCache: "none" })
+            .then((registration) => registration.update())
+            .catch(() => {});
         });
       }
     })();
