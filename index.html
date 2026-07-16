@@ -777,9 +777,10 @@
       const DUALSENSE_USB_INPUT_REPORT_ID = 0x01;
       const DUALSENSE_USB_INPUT_REPORT_SIZE = 63;
       const DUALSENSE_USB_OUTPUT_REPORT_ID = 0x02;
-      // WebHID supplies the report ID separately, leaving 62 data bytes from
-      // the 63-byte DualSense USB output report.
-      const DUALSENSE_USB_OUTPUT_REPORT_SIZE = 62;
+      // Chrome validates WebHID writes against the controller descriptor. Its
+      // USB report 0x02 exposes the 47-byte common payload; the report ID is
+      // supplied separately to sendReport().
+      const DUALSENSE_USB_OUTPUT_REPORT_SIZE = 47;
       const DUALSENSE_OUTPUT_FLAG0_HAPTICS_SELECT = 0x02;
       const DUALSENSE_OUTPUT_FLAG0_COMPATIBLE_VIBRATION = 0x01;
       const HAPTIC_PATTERNS = Object.freeze({
@@ -808,8 +809,8 @@
           { duration: 150, gap: 0, strongMagnitude: 0.62, weakMagnitude: 0.5 }
         ]
       });
-      const BUILD_NUMBER = 17;
-      const BUILD_DATE = "20260717.0001";
+      const BUILD_NUMBER = 18;
+      const BUILD_DATE = "20260717.0002";
       const INTRO_TITLE = "How to Play";
       const DESKTOP_INTRO_COPY = "Steer by dragging, with WASD or the arrow keys, or with a controller.\nDualSense: Cross starts, Options pauses, Square restarts, and Triangle toggles haptics; enable its touchpad for relative drag steering.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
       const MOBILE_INTRO_COPY = "Steer with the joystick, by dragging in the arena, or with a connected controller.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
