@@ -1,6 +1,6 @@
 # Ocean Snake
 
-Ocean Snake is a polished, responsive browser snake game built as a single HTML file. It has pointer-drag steering, mobile joystick controls, WASD keyboard movement, gamepad support, animated ocean visuals, sound and haptic controls, and a persistent best score stored in `localStorage`.
+Ocean Snake is a polished, responsive browser snake game built as a single HTML file. It has pointer-drag steering, mobile joystick controls, WASD keyboard movement, progressive gamepad and USB DualSense touchpad support, animated ocean visuals, sound and haptic controls, and a persistent best score stored in `localStorage`.
 
 You can try a live playable version of this game here: https://html.cafe/x726e33d0
 
@@ -11,7 +11,8 @@ You can try a live playable version of this game here: https://html.cafe/x726e33
 - Offline cache through `service-worker.js` when served from a static HTTPS host
 - Responsive desktop and mobile layout
 - Mouse, touch, keyboard (WASD or arrow keys), and gamepad input
-- Capability-detected vibration and gamepad rumble for key gameplay events
+- Capability-detected mobile vibration, sequenced gamepad rumble, and an optional USB DualSense WebHID fallback
+- Optional USB DualSense touchpad steering in Chromium browsers
 - Pause, mute, haptics, and restart controls with keyboard shortcuts
 - Local best-score and settings persistence
 - Synthesized ambient music fallback when streaming audio is unavailable
@@ -62,13 +63,25 @@ http://localhost:8000
 - Keyboard: `W`, `A`, `S`, `D` or the arrow keys
 - Keyboard shortcuts: `Space` start/pause, `P` pause, `M` mute, `R` restart
 - Gamepad: analog stick or D-pad
+- DualSense: Cross starts or resumes, Options pauses, Square restarts, and Triangle toggles haptics
+- USB DualSense touchpad: select **Enable DualSense touchpad**, then drag on the pad to steer relative to the snake's current position; each new touch re-anchors without moving the snake, and lifting your finger returns to coasting
 - Buttons: pause, mute, haptics (when supported), restart
 
 ## Haptic Feedback
 
-Haptics are enabled by default on supported devices and can be switched off independently from sound. Ordinary fish, magic fish or color upgrades, and collisions use distinct feedback. The game uses the standard Vibration API for compatible mobile browsers and dual-rumble feedback for compatible gamepads.
+Haptics are enabled by default on supported devices and can be switched off independently from sound. Ordinary fish, combos, magic fish or color upgrades, invincibility warnings, and collisions use distinct sequenced feedback. The game prefers the standard Gamepad haptic actuator, uses an authorized USB DualSense WebHID connection as a compatible-vibration fallback, and otherwise uses the Vibration API on compatible mobile browsers.
 
 Browsers that do not expose a haptic API continue without vibration and hide the haptics button. In particular, iPhone Safari does not currently provide a reliable web API for device vibration; an attached compatible gamepad can still provide rumble.
+
+This browser-first implementation provides dual-actuator tactile patterns, not PlayStation-native PCM audio haptics. Adaptive triggers, the light bar, motion sensors, and controller speaker are intentionally not controlled.
+
+## Enhanced USB DualSense Support
+
+Chrome and Edge can expose the DualSense touch surface through WebHID. Connect the controller by USB and press a controller button so the standard Gamepad API detects it. When the controller icon appears, select **Enable DualSense touchpad**, choose **Wireless Controller** in the browser prompt, and approve the connection.
+
+The permission prompt only appears after that explicit button press. On later visits, the game attempts to reopen an already authorized controller without prompting. Denying permission, unplugging the controller, or using a browser without WebHID leaves analog-stick, D-pad, keyboard, mouse, and mobile controls unchanged.
+
+The enhanced path currently supports the USB input report. A Bluetooth DualSense continues to work through the standard Gamepad API, but its raw touchpad path is not enabled in this version. Use HTTPS or `localhost` for WebHID testing.
 
 ## Deployment
 

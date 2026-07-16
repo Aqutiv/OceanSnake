@@ -662,6 +662,12 @@
             <path d="M20 9v6"></path>
           </svg>
         </button>
+        <button class="icon-button" id="dualSenseBtn" type="button" aria-label="Enable DualSense touchpad" title="Enable DualSense touchpad" aria-pressed="false" hidden>
+          <svg id="dualSenseIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 8h10a4 4 0 0 1 3.7 2.5l1.1 3.1a3 3 0 0 1-4.8 3.3L15 15h-6l-2 1.9a3 3 0 0 1-4.8-3.3l1.1-3.1A4 4 0 0 1 7 8z"></path>
+            <path d="M8 11v3"></path><path d="M6.5 12.5h3"></path><path d="M15.5 12h.01"></path><path d="M18 14h.01"></path>
+          </svg>
+        </button>
         <button class="icon-button" id="restartBtn" type="button" aria-label="Restart" title="Restart">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 12a9 9 0 1 0 3-6.7"></path>
@@ -689,6 +695,8 @@
       const muteIcon = document.getElementById("muteIcon");
       const hapticsBtn = document.getElementById("hapticsBtn");
       const hapticsIcon = document.getElementById("hapticsIcon");
+      const dualSenseBtn = document.getElementById("dualSenseBtn");
+      const dualSenseIcon = document.getElementById("dualSenseIcon");
       const restartBtn = document.getElementById("restartBtn");
       const joystick = document.getElementById("joystick");
       const joystickThumb = document.getElementById("joystickThumb");
@@ -717,6 +725,8 @@
       const GAMEPAD_MAX_STEP = JOYSTICK_MAX_STEP;
       const GAMEPAD_RESPONSE_EXPONENT = 1.25;
       const GAMEPAD_BUTTON_A = 0;
+      const GAMEPAD_BUTTON_SQUARE = 2;
+      const GAMEPAD_BUTTON_TRIANGLE = 3;
       const GAMEPAD_BUTTON_MENU = 9;
       const GAMEPAD_BUTTON_DPAD_UP = 12;
       const GAMEPAD_BUTTON_DPAD_DOWN = 13;
@@ -760,25 +770,44 @@
       const MUTED_STORAGE_KEY = "oceanSnakeMuted";
       const INTRO_SEEN_STORAGE_KEY = "oceanSnakeIntroSeen";
       const HAPTICS_STORAGE_KEY = "oceanSnakeHapticsEnabled";
+      const SONY_VENDOR_ID = 0x054c;
+      const DUALSENSE_PRODUCT_ID = 0x0ce6;
+      const DUALSENSE_TOUCH_WIDTH = 1920;
+      const DUALSENSE_TOUCH_HEIGHT = 1080;
+      const DUALSENSE_USB_INPUT_REPORT_ID = 0x01;
+      const DUALSENSE_USB_INPUT_REPORT_SIZE = 63;
+      const DUALSENSE_USB_OUTPUT_REPORT_ID = 0x02;
+      const DUALSENSE_USB_OUTPUT_REPORT_SIZE = 47;
       const HAPTIC_PATTERNS = Object.freeze({
-        bite: {
-          device: 24,
-          gamepad: { duration: 55, strongMagnitude: 0.08, weakMagnitude: 0.34 }
-        },
-        reward: {
-          device: [38, 42, 62],
-          gamepad: { duration: 150, strongMagnitude: 0.46, weakMagnitude: 0.68 }
-        },
-        collision: {
-          device: [80, 55, 130],
-          gamepad: { duration: 285, strongMagnitude: 1, weakMagnitude: 0.42 }
-        }
+        confirmation: [
+          { duration: 38, gap: 0, strongMagnitude: 0.08, weakMagnitude: 0.28 }
+        ],
+        bite: [
+          { duration: 42, gap: 0, strongMagnitude: 0.06, weakMagnitude: 0.34 }
+        ],
+        combo: [
+          { duration: 34, gap: 34, strongMagnitude: 0.08, weakMagnitude: 0.32 },
+          { duration: 54, gap: 0, strongMagnitude: 0.28, weakMagnitude: 0.58 }
+        ],
+        reward: [
+          { duration: 38, gap: 34, strongMagnitude: 0.12, weakMagnitude: 0.36 },
+          { duration: 52, gap: 34, strongMagnitude: 0.32, weakMagnitude: 0.58 },
+          { duration: 82, gap: 0, strongMagnitude: 0.58, weakMagnitude: 0.78 }
+        ],
+        warning: [
+          { duration: 72, gap: 48, strongMagnitude: 0.48, weakMagnitude: 0.12 },
+          { duration: 96, gap: 0, strongMagnitude: 0.68, weakMagnitude: 0.18 }
+        ],
+        collision: [
+          { duration: 110, gap: 48, strongMagnitude: 1, weakMagnitude: 0.24 },
+          { duration: 150, gap: 0, strongMagnitude: 0.62, weakMagnitude: 0.5 }
+        ]
       });
-      const BUILD_NUMBER = 14;
-      const BUILD_DATE = "20260713.0201";
+      const BUILD_NUMBER = 16;
+      const BUILD_DATE = "20260716.0002";
       const INTRO_TITLE = "How to Play";
-      const DESKTOP_INTRO_COPY = "Drag the snake's head, steer with WASD or the arrow keys, or use a connected controller.\nPress Space to start or pause, M to mute, R to restart.\nEat fish to grow, score, and shift colors.\nEat quickly to build combos and score multipliers.\nAvoid walls and your own body.\nCatch the magic fish for invincibility: you can pass through yourself for 5 bites or until the next color.\nMagic fish appear every 10-20 bites, move fast, and can slip through your body.";
-      const MOBILE_INTRO_COPY = "Use the joystick or a connected controller for speed and direction, or drag inside the arena to guide the snake's head.\nEat fish to grow, score, and shift colors.\nEat quickly to build combos and score multipliers.\nAvoid walls and your own body.\nCatch the magic fish for invincibility: you can pass through yourself for 5 bites or until the next color.\nMagic fish appear every 10-20 bites, move fast, and can slip through your body.";
+      const DESKTOP_INTRO_COPY = "Steer by dragging, with WASD or the arrow keys, or with a controller.\nDualSense: Cross starts, Options pauses, Square restarts, and Triangle toggles haptics; enable its touchpad for relative drag steering.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
+      const MOBILE_INTRO_COPY = "Steer with the joystick, by dragging in the arena, or with a connected controller.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
       const FOOD_THEMES = [
         { main: "#ffcf5a", accent: "#ff7a59", glow: "rgba(255, 207, 90, 0.72)" },
         { main: "#7ee7ff", accent: "#35d6b4", glow: "rgba(126, 231, 255, 0.72)" },
@@ -843,6 +872,28 @@
       let gamepadVector = { x: 0, y: 0 };
       let gamepadPower = 0;
       let gamepadButtonStates = [];
+      let controllerCapabilities = {
+        standardGamepad: false,
+        supportedHapticEffects: [],
+        gamepadTouch: false,
+        webHid: "hid" in navigator,
+        enhancedDualSense: false
+      };
+      let controllerTouchState = {
+        source: null,
+        touchId: null,
+        x: 0.5,
+        y: 0.5,
+        anchorX: 0.5,
+        anchorY: 0.5,
+        anchorTargetX: 0,
+        anchorTargetY: 0,
+        active: false,
+        lastTimestamp: 0
+      };
+      let dualSenseDevice = null;
+      let dualSenseConnectionType = null;
+      let dualSenseMutePressed = false;
       let resizeFrame;
       let renderDpr = 1;
       let paused;
@@ -877,6 +928,7 @@
       bestEl.textContent = best;
 
       function reset() {
+        stopHaptics();
         syncArenaSize();
         const startLength = initialSnakeLength();
         const gap = segmentGap();
@@ -925,6 +977,7 @@
         dragOffset = { x: 0, y: 0 };
         resetJoystick();
         resetGamepadControl();
+        resetControllerTouch();
         paused = false;
         pauseStartedAt = 0;
         lastFrame = performance.now();
@@ -1458,6 +1511,101 @@
         }
       }
 
+      function resetControllerTouch(updateStatus = false, source = null) {
+        if (source && controllerTouchState.source !== source) return;
+        const wasActive = controllerTouchState.active;
+        controllerTouchState = {
+          source: null,
+          touchId: null,
+          x: 0.5,
+          y: 0.5,
+          anchorX: 0.5,
+          anchorY: 0.5,
+          anchorTargetX: 0,
+          anchorTargetY: 0,
+          active: false,
+          lastTimestamp: 0
+        };
+        if (updateStatus && wasActive && gameState === "playing" && !paused) {
+          setStatus("Coasting", "#8bd3ff");
+        }
+      }
+
+      function controllerTouchRelativePoint(state) {
+        const margin = headRadius();
+        const usableWidth = Math.max(0, ARENA.width - margin * 2);
+        const usableHeight = Math.max(0, ARENA.height - margin * 2);
+        return clampArenaPoint({
+          x: state.anchorTargetX + (state.x - state.anchorX) * usableWidth,
+          y: state.anchorTargetY + (state.y - state.anchorY) * usableHeight
+        }, margin);
+      }
+
+      function updateControllerTouch(source, touchId, x, y) {
+        if (
+          controllerTouchState.active &&
+          (controllerTouchState.source !== source || controllerTouchState.touchId !== touchId)
+        ) {
+          return false;
+        }
+
+        const firstContact = !controllerTouchState.active;
+        if (gameState === "over" && !firstContact) {
+          controllerTouchState.x = clamp(x, 0, 1);
+          controllerTouchState.y = clamp(y, 0, 1);
+          controllerTouchState.lastTimestamp = performance.now();
+          return true;
+        }
+        if (gameState === "over") reset();
+
+        const normalizedX = clamp(x, 0, 1);
+        const normalizedY = clamp(y, 0, 1);
+        const anchorTarget = firstContact ? { ...snake[0] } : {
+          x: controllerTouchState.anchorTargetX,
+          y: controllerTouchState.anchorTargetY
+        };
+        controllerTouchState = {
+          source,
+          touchId,
+          x: normalizedX,
+          y: normalizedY,
+          anchorX: firstContact ? normalizedX : controllerTouchState.anchorX,
+          anchorY: firstContact ? normalizedY : controllerTouchState.anchorY,
+          anchorTargetX: anchorTarget.x,
+          anchorTargetY: anchorTarget.y,
+          active: true,
+          lastTimestamp: performance.now()
+        };
+        lastControlSource = "gamepad";
+
+        if (joystickActive || paused) return true;
+
+        cancelCanvasDrag();
+        resetGamepadControl();
+        target = controllerTouchRelativePoint(controllerTouchState);
+        startPlaying();
+        if (firstContact) {
+          setStatus(source === "webhid" ? "DualSense touchpad" : "Controller touch", "#c9a7ff");
+        }
+        return true;
+      }
+
+      function processControllerTouches(source, touches) {
+        if (controllerTouchState.active && controllerTouchState.source === source) {
+          const current = touches.find((touch) => touch.active && touch.touchId === controllerTouchState.touchId);
+          if (!current) {
+            resetControllerTouch(true, source);
+            return false;
+          }
+          return updateControllerTouch(source, current.touchId, current.x, current.y);
+        }
+
+        if (controllerTouchState.active) return false;
+        const first = touches.find((touch) => touch.active);
+        if (!first) return false;
+        return updateControllerTouch(source, first.touchId, first.x, first.y);
+      }
+
       function gamepadButtonPressed(button) {
         return !!button && (button.pressed || button.value > 0.5);
       }
@@ -1475,34 +1623,106 @@
         return typeof navigator.vibrate === "function";
       }
 
+      function isDualSenseGamepad(gamepad) {
+        if (!gamepad) return false;
+        const id = String(gamepad.id || "");
+        return /dualsense/i.test(id) || (/054c/i.test(id) && /0ce6/i.test(id));
+      }
+
+      function gamepadHapticEffects(gamepad) {
+        const actuator = gamepad && gamepad.vibrationActuator;
+        if (!actuator) return [];
+        try {
+          if (actuator.effects) return Array.from(actuator.effects);
+          if (
+            typeof actuator.canPlayEffectType === "function" &&
+            actuator.canPlayEffectType("dual-rumble")
+          ) {
+            return ["dual-rumble"];
+          }
+        } catch (error) {}
+        return typeof actuator.playEffect === "function" ? ["dual-rumble"] : [];
+      }
+
       function gamepadHapticActuator(gamepad) {
         const actuator = gamepad && gamepad.vibrationActuator;
         if (!actuator || typeof actuator.playEffect !== "function") return null;
-
-        try {
-          if (
-            typeof actuator.canPlayEffectType === "function" &&
-            !actuator.canPlayEffectType("dual-rumble")
-          ) {
-            return null;
-          }
-        } catch (error) {
-          return null;
-        }
-
-        return actuator;
+        return gamepadHapticEffects(gamepad).includes("dual-rumble") ? actuator : null;
       }
 
       function gamepadHapticsAvailable() {
         return getConnectedGamepads().some((gamepad) => !!gamepadHapticActuator(gamepad));
       }
 
+      function enhancedDualSenseReady() {
+        return !!(
+          dualSenseDevice &&
+          dualSenseDevice.opened &&
+          dualSenseConnectionType === "usb"
+        );
+      }
+
+      function updateDualSenseButton(gamepad = selectGamepad()) {
+        const connected = enhancedDualSenseReady();
+        const available = controllerCapabilities.webHid && (connected || isDualSenseGamepad(gamepad));
+        dualSenseBtn.hidden = !available;
+        dualSenseBtn.setAttribute("aria-pressed", String(connected));
+        dualSenseBtn.setAttribute(
+          "aria-label",
+          connected ? "DualSense touchpad enabled" : "Enable DualSense touchpad"
+        );
+        dualSenseBtn.title = connected ? "DualSense touchpad enabled" : "Enable DualSense touchpad";
+        dualSenseIcon.style.filter = connected ? "drop-shadow(0 0 6px rgba(201, 167, 255, 0.9))" : "";
+      }
+
+      function updateControllerCapabilities(gamepad = selectGamepad()) {
+        controllerCapabilities = {
+          standardGamepad: !!gamepad,
+          supportedHapticEffects: gamepadHapticEffects(gamepad),
+          gamepadTouch: !!(gamepad && "touches" in gamepad),
+          webHid: "hid" in navigator,
+          enhancedDualSense: enhancedDualSenseReady()
+        };
+        updateDualSenseButton(gamepad);
+      }
+
       function updateHapticsAvailability() {
-        hapticsBtn.hidden = !(deviceHapticsAvailable() || gamepadHapticsAvailable());
+        hapticsBtn.hidden = !(
+          deviceHapticsAvailable() ||
+          gamepadHapticsAvailable() ||
+          enhancedDualSenseReady()
+        );
         updateHapticsIcon();
       }
 
       let hapticSequence = 0;
+
+      function hapticDelay(duration) {
+        return new Promise((resolve) => window.setTimeout(resolve, duration));
+      }
+
+      function hapticStillAllowed(sequence) {
+        return sequence === hapticSequence && hapticsEnabled && !paused && !document.hidden;
+      }
+
+      function hapticPatternForDevice(pattern) {
+        const vibration = [];
+        pattern.forEach((segment, index) => {
+          vibration.push(segment.duration);
+          if (segment.gap > 0 && index < pattern.length - 1) vibration.push(segment.gap);
+        });
+        return vibration.length === 1 ? vibration[0] : vibration;
+      }
+
+      async function sendDualSenseUsbRumble(strongMagnitude, weakMagnitude) {
+        if (!enhancedDualSenseReady()) return false;
+        const report = new Uint8Array(DUALSENSE_USB_OUTPUT_REPORT_SIZE);
+        report[0] = 0x01;
+        report[2] = Math.round(clamp(weakMagnitude, 0, 1) * 0xff);
+        report[3] = Math.round(clamp(strongMagnitude, 0, 1) * 0xff);
+        await dualSenseDevice.sendReport(DUALSENSE_USB_OUTPUT_REPORT_ID, report);
+        return true;
+      }
 
       function stopHaptics() {
         hapticSequence += 1;
@@ -1527,30 +1747,44 @@
             // Haptics are always optional.
           }
         });
+
+        if (enhancedDualSenseReady()) {
+          sendDualSenseUsbRumble(0, 0).catch(() => {});
+        }
       }
 
-      function playGamepadHaptic(actuator, effect, sequence) {
-        try {
-          const resetAttempt = typeof actuator.reset === "function"
-            ? actuator.reset()
-            : null;
+      function playGamepadHaptic(actuator, pattern, sequence) {
+        (async () => {
+          if (typeof actuator.reset === "function") await actuator.reset().catch(() => {});
+          for (const segment of pattern) {
+            if (!hapticStillAllowed(sequence)) return;
+            await actuator.playEffect("dual-rumble", {
+              startDelay: 0,
+              duration: segment.duration,
+              strongMagnitude: segment.strongMagnitude,
+              weakMagnitude: segment.weakMagnitude
+            });
+            if (segment.gap > 0) await hapticDelay(segment.gap);
+          }
+        })().catch(() => {});
+        return true;
+      }
 
-          Promise.resolve(resetAttempt)
-            .catch(() => {})
-            .then(() => {
-              if (sequence !== hapticSequence || !hapticsEnabled || paused || document.hidden) return null;
-              return actuator.playEffect("dual-rumble", {
-                startDelay: 0,
-                duration: effect.duration,
-                strongMagnitude: effect.strongMagnitude,
-                weakMagnitude: effect.weakMagnitude
-              });
-            })
-            .catch(() => {});
-          return true;
-        } catch (error) {
-          return false;
-        }
+      function playWebHidHaptic(pattern, sequence) {
+        (async () => {
+          for (const segment of pattern) {
+            if (!hapticStillAllowed(sequence)) return;
+            await sendDualSenseUsbRumble(segment.strongMagnitude, segment.weakMagnitude);
+            await hapticDelay(segment.duration);
+            if (sequence !== hapticSequence) return;
+            await sendDualSenseUsbRumble(0, 0);
+            if (segment.gap > 0) await hapticDelay(segment.gap);
+          }
+          if (sequence === hapticSequence && enhancedDualSenseReady()) {
+            await sendDualSenseUsbRumble(0, 0);
+          }
+        })().catch(() => {});
+        return true;
       }
 
       function playHaptic(event) {
@@ -1559,17 +1793,19 @@
 
         const sequence = ++hapticSequence;
 
-        if (lastControlSource === "gamepad") {
-          const actuator = gamepadHapticActuator(selectGamepad());
-          if (actuator) {
-            return playGamepadHaptic(actuator, pattern.gamepad, sequence);
-          }
+        const actuator = gamepadHapticActuator(selectGamepad());
+        if (actuator) {
+          return playGamepadHaptic(actuator, pattern, sequence);
+        }
+
+        if (enhancedDualSenseReady()) {
+          return playWebHidHaptic(pattern, sequence);
         }
 
         if (!deviceHapticsAvailable()) return false;
 
         try {
-          return navigator.vibrate(pattern.device);
+          return navigator.vibrate(hapticPatternForDevice(pattern));
         } catch (error) {
           return false;
         }
@@ -1664,6 +1900,17 @@
           activateGamepadButton();
         }
 
+        if (justPressed(GAMEPAD_BUTTON_SQUARE)) {
+          lastControlSource = "gamepad";
+          reset();
+          setStatus("Restarted", "#8bd3ff");
+        }
+
+        if (justPressed(GAMEPAD_BUTTON_TRIANGLE)) {
+          lastControlSource = "gamepad";
+          toggleHaptics();
+        }
+
         if (justPressed(GAMEPAD_BUTTON_MENU)) {
           lastControlSource = "gamepad";
           if (gameState === "ready") {
@@ -1676,16 +1923,41 @@
         gamepadButtonStates = pressed;
       }
 
+      function pollStandardGamepadTouches(gamepad) {
+        if (enhancedDualSenseReady()) return controllerTouchState.active;
+        const touches = gamepad && gamepad.touches ? Array.from(gamepad.touches) : [];
+        if (!touches.length) {
+          resetControllerTouch(true, "gamepad-touch");
+          return false;
+        }
+        const normalized = touches.map((touch, index) => ({
+          active: true,
+          touchId: touch.touchId ?? index,
+          x: clamp(((touch.position && touch.position.x) || 0) * 0.5 + 0.5, 0, 1),
+          y: clamp(((touch.position && touch.position.y) || 0) * 0.5 + 0.5, 0, 1)
+        }));
+        return processControllerTouches("gamepad-touch", normalized);
+      }
+
       function pollGamepad() {
         const gamepad = selectGamepad();
         if (!gamepad) {
           resetGamepadControl(true);
+          resetControllerTouch(true, "gamepad-touch");
+          updateControllerCapabilities(null);
           return;
         }
 
+        updateControllerCapabilities(gamepad);
         handleGamepadButtons(gamepad);
+        pollStandardGamepadTouches(gamepad);
 
         if (paused || joystickActive) {
+          resetGamepadControl();
+          return;
+        }
+
+        if (controllerTouchState.active) {
           resetGamepadControl();
           return;
         }
@@ -1723,6 +1995,7 @@
       function handleGamepadConnected(event) {
         gamepadIndex = event.gamepad.index;
         gamepadButtonStates = [];
+        updateControllerCapabilities(event.gamepad);
         updateHapticsAvailability();
         if (gameState === "ready") {
           setStatus("Controller ready", "#8bd3ff");
@@ -1731,13 +2004,152 @@
 
       function handleGamepadDisconnected(event) {
         if (gamepadIndex !== event.gamepad.index) return;
+        stopHaptics();
         gamepadIndex = null;
         gamepadButtonStates = [];
         resetGamepadControl(true);
+        resetControllerTouch(true, "gamepad-touch");
+        updateControllerCapabilities(null);
         updateHapticsAvailability();
         if (gameState === "ready") {
           setStatus("Ready", "#31d0aa");
         }
+      }
+
+      function detectDualSenseConnectionType(device) {
+        for (const collection of device.collections || []) {
+          if (collection.usagePage !== 0x01 || collection.usage !== 0x05) continue;
+          const maxInputBits = (collection.inputReports || []).reduce((maximum, report) => {
+            const bits = (report.items || []).reduce(
+              (total, item) => total + item.reportSize * item.reportCount,
+              0
+            );
+            return Math.max(maximum, bits);
+          }, 0);
+          if (maxInputBits === 504) return "usb";
+          if (maxInputBits === 616) return "bluetooth";
+        }
+        return "unknown";
+      }
+
+      function isDualSenseHidDevice(device) {
+        return !!(
+          device &&
+          device.vendorId === SONY_VENDOR_ID &&
+          device.productId === DUALSENSE_PRODUCT_ID
+        );
+      }
+
+      function parseDualSenseTouch(data, offset) {
+        const contact = data.getUint8(offset);
+        const xLow = data.getUint8(offset + 1);
+        const xyHigh = data.getUint8(offset + 2);
+        const yHigh = data.getUint8(offset + 3);
+        return {
+          active: !(contact & 0x80),
+          touchId: contact & 0x7f,
+          x: clamp((((xyHigh & 0x0f) << 8) | xLow) / (DUALSENSE_TOUCH_WIDTH - 1), 0, 1),
+          y: clamp(((yHigh << 4) | ((xyHigh & 0xf0) >> 4)) / (DUALSENSE_TOUCH_HEIGHT - 1), 0, 1)
+        };
+      }
+
+      function handleDualSenseInputReport(event) {
+        if (
+          event.device !== dualSenseDevice ||
+          event.reportId !== DUALSENSE_USB_INPUT_REPORT_ID ||
+          event.data.byteLength !== DUALSENSE_USB_INPUT_REPORT_SIZE
+        ) {
+          return;
+        }
+
+        const mutePressed = !!(event.data.getUint8(9) & 0x04);
+        if (mutePressed && !dualSenseMutePressed) {
+          lastControlSource = "gamepad";
+          toggleMute();
+        }
+        dualSenseMutePressed = mutePressed;
+
+        processControllerTouches("webhid", [
+          parseDualSenseTouch(event.data, 32),
+          parseDualSenseTouch(event.data, 36)
+        ]);
+      }
+
+      async function attachDualSenseDevice(device, announce = true) {
+        if (!isDualSenseHidDevice(device)) return false;
+        if (!device.opened) await device.open();
+
+        const connectionType = detectDualSenseConnectionType(device);
+        if (connectionType !== "usb") {
+          if (device.opened) await device.close().catch(() => {});
+          if (announce) setStatus("Use USB for DualSense touchpad", "#ffcf5a");
+          return false;
+        }
+
+        if (dualSenseDevice && dualSenseDevice !== device) {
+          dualSenseDevice.oninputreport = null;
+        }
+        dualSenseDevice = device;
+        dualSenseConnectionType = connectionType;
+        dualSenseMutePressed = false;
+        dualSenseDevice.oninputreport = handleDualSenseInputReport;
+        updateControllerCapabilities(selectGamepad());
+        updateHapticsAvailability();
+
+        if (announce) {
+          lastControlSource = "gamepad";
+          setStatus("DualSense touchpad ready", "#c9a7ff");
+          playHaptic("confirmation");
+        }
+        return true;
+      }
+
+      async function requestDualSenseDevice() {
+        if (!("hid" in navigator)) return;
+        try {
+          const devices = await navigator.hid.requestDevice({
+            filters: [{ vendorId: SONY_VENDOR_ID, productId: DUALSENSE_PRODUCT_ID }]
+          });
+          if (!devices.length) {
+            setStatus("DualSense permission not granted", "#ffcf5a");
+            return;
+          }
+          await attachDualSenseDevice(devices[0], true);
+        } catch (error) {
+          const copy = error && error.name === "NotFoundError"
+            ? "DualSense permission not granted"
+            : "DualSense connection failed";
+          setStatus(copy, "#ffcf5a");
+        }
+      }
+
+      async function restoreDualSenseDevice() {
+        if (!("hid" in navigator)) return;
+        try {
+          const devices = await navigator.hid.getDevices();
+          const device = devices.find(isDualSenseHidDevice);
+          if (device) await attachDualSenseDevice(device, false);
+        } catch (error) {
+          // Enhanced controller support is optional.
+        }
+      }
+
+      function handleHidConnect(event) {
+        if (!isDualSenseHidDevice(event.device) || dualSenseDevice) return;
+        attachDualSenseDevice(event.device, false).catch(() => {});
+      }
+
+      function handleHidDisconnect(event) {
+        if (event.device !== dualSenseDevice) return;
+        stopHaptics();
+        dualSenseDevice.oninputreport = null;
+        dualSenseDevice = null;
+        dualSenseConnectionType = null;
+        dualSenseMutePressed = false;
+        resetControllerTouch(true, "webhid");
+        updateControllerCapabilities(selectGamepad());
+        updateHapticsAvailability();
+        if (gameState === "ready") setStatus("Controller ready", "#8bd3ff");
       }
 
       function cancelCanvasDrag() {
@@ -2104,7 +2516,7 @@
       }
 
       function startDrag(event) {
-        if (joystickActive) return;
+        if (joystickActive || controllerTouchState.active) return;
         if (event.button !== undefined && event.button !== 0) return;
         event.preventDefault();
         lastControlSource = "device";
@@ -2191,7 +2603,7 @@
 
         if (!direction) return;
         event.preventDefault();
-        if (dragging || joystickActive) return;
+        if (dragging || joystickActive || controllerTouchState.active) return;
         lastControlSource = "device";
 
         if (gameState === "over") {
@@ -2607,6 +3019,7 @@
         pendingInvincibleBites = 0;
         invincibleWarningUntil = performance.now() + INVINCIBLE_ENDING_WARNING_MS;
         playInvincibilityEndingCue();
+        playHaptic("warning");
         setStatus(`Invincible ending ${invincibilityWarningRemaining().toFixed(1)}`, "#ffd166");
       }
 
@@ -2681,7 +3094,7 @@
           playHaptic("reward");
           rewardBiteSound(combo);
         } else {
-          playHaptic("bite");
+          playHaptic(combo.count > 1 ? "combo" : "bite");
           snackBite(combo);
         }
       }
@@ -3463,6 +3876,7 @@
           cancelCanvasDrag();
           resetJoystick();
           resetGamepadControl();
+          resetControllerTouch();
           stopHaptics();
           suspendGameAudio();
           if (reason === "lifecycle") {
@@ -3496,6 +3910,7 @@
         cancelCanvasDrag();
         resetJoystick();
         resetGamepadControl();
+        resetControllerTouch();
         stopHaptics();
 
         if (gameState === "playing" && !paused) {
@@ -3524,6 +3939,8 @@
       function simulateGameplay(dt) {
         if (joystickActive) {
           moveHeadWithJoystick(dt);
+        } else if (controllerTouchState.active) {
+          moveHeadTowardTarget(dt);
         } else if (gamepadActive) {
           moveHeadWithGamepad(dt);
         } else if (dragging) {
@@ -3583,16 +4000,20 @@
         syncMusicMute();
       }
 
+      function toggleHaptics() {
+        hapticsEnabled = !hapticsEnabled;
+        try {
+          localStorage.setItem(HAPTICS_STORAGE_KEY, String(hapticsEnabled));
+        } catch (error) {}
+        if (!hapticsEnabled) stopHaptics();
+        updateHapticsIcon();
+        setStatus(hapticsEnabled ? "Haptics on" : "Haptics off", "#8bd3ff");
+      }
+
       pauseBtn.addEventListener("click", togglePause);
       muteBtn.addEventListener("click", toggleMute);
-      hapticsBtn.addEventListener("click", () => {
-        hapticsEnabled = !hapticsEnabled;
-        localStorage.setItem(HAPTICS_STORAGE_KEY, String(hapticsEnabled));
-        if (!hapticsEnabled) {
-          stopHaptics();
-        }
-        updateHapticsIcon();
-      });
+      hapticsBtn.addEventListener("click", toggleHaptics);
+      dualSenseBtn.addEventListener("click", requestDualSenseDevice);
       restartBtn.addEventListener("click", reset);
       joystick.addEventListener("pointerdown", startJoystick);
       joystick.addEventListener("pointermove", moveJoystick);
@@ -3610,6 +4031,10 @@
       window.addEventListener("keydown", handleActionKey);
       window.addEventListener("gamepadconnected", handleGamepadConnected);
       window.addEventListener("gamepaddisconnected", handleGamepadDisconnected);
+      if ("hid" in navigator && navigator.hid.addEventListener) {
+        navigator.hid.addEventListener("connect", handleHidConnect);
+        navigator.hid.addEventListener("disconnect", handleHidDisconnect);
+      }
       window.addEventListener("resize", scheduleArenaSync);
       window.addEventListener("orientationchange", scheduleArenaSync);
       window.addEventListener("blur", pauseForLifecycle);
@@ -3624,7 +4049,9 @@
       syncArenaSize();
       reset();
       syncMusicMute();
+      updateControllerCapabilities(selectGamepad());
       updateHapticsAvailability();
+      restoreDualSenseDevice();
       requestAnimationFrame(frame);
 
       if ("serviceWorker" in navigator && window.isSecureContext) {
