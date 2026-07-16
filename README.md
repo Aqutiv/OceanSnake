@@ -123,6 +123,17 @@ http://localhost:8000
 
 Chrome treats `localhost` as a secure context, so service-worker registration works during local testing.
 
+### Sites and GitHub Pages
+
+The project can be published on both hosts from the same commit:
+
+1. GitHub Pages serves the repository root directly. In the repository's **Settings > Pages**, set the source to **Deploy from a branch**, select `master`, and choose `/ (root)`.
+2. Sites uses the Worker-compatible adapter in this repository. Run `npm install`, then `npm run test` to create and validate the Sites package before publishing through Sites.
+
+The Sites deployment redirects its root URL to `/game/`, where the original static PWA is served. This keeps the manifest, icons, and service worker in the same URL scope on both hosts. The `public/game/` directory is generated during the build and is deliberately not committed.
+
+For every release, commit and push the game change first so GitHub Pages publishes it, then publish that same commit to Sites. Do not put deployment credentials in tracked files; rotate any credential that has appeared in a shared file or terminal output.
+
 ### HTML.cafe
 
 The deploy script builds a self-contained HTML artifact and can upload it to HTML.cafe.

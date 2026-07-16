@@ -5,4 +5,7 @@
 .env.*
 dist/
 node_modules/
+.next/
+.wrangler/
+public/game/
 debug.log
