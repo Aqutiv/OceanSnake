@@ -777,10 +777,15 @@
       const DUALSENSE_USB_INPUT_REPORT_ID = 0x01;
       const DUALSENSE_USB_INPUT_REPORT_SIZE = 63;
       const DUALSENSE_USB_OUTPUT_REPORT_ID = 0x02;
-      const DUALSENSE_USB_OUTPUT_REPORT_SIZE = 47;
+      // WebHID supplies the report ID separately, leaving 62 data bytes from
+      // the 63-byte DualSense USB output report.
+      const DUALSENSE_USB_OUTPUT_REPORT_SIZE = 62;
+      const DUALSENSE_OUTPUT_FLAG0_HAPTICS_SELECT = 0x02;
+      const DUALSENSE_OUTPUT_FLAG0_COMPATIBLE_VIBRATION = 0x01;
       const HAPTIC_PATTERNS = Object.freeze({
         confirmation: [
-          { duration: 38, gap: 0, strongMagnitude: 0.08, weakMagnitude: 0.28 }
+          { duration: 90, gap: 45, strongMagnitude: 0.32, weakMagnitude: 0.58 },
+          { duration: 120, gap: 0, strongMagnitude: 0.68, weakMagnitude: 0.34 }
         ],
         bite: [
           { duration: 42, gap: 0, strongMagnitude: 0.06, weakMagnitude: 0.34 }
@@ -803,8 +808,8 @@
           { duration: 150, gap: 0, strongMagnitude: 0.62, weakMagnitude: 0.5 }
         ]
       });
-      const BUILD_NUMBER = 16;
-      const BUILD_DATE = "20260716.0002";
+      const BUILD_NUMBER = 17;
+      const BUILD_DATE = "20260717.0001";
       const INTRO_TITLE = "How to Play";
       const DESKTOP_INTRO_COPY = "Steer by dragging, with WASD or the arrow keys, or with a controller.\nDualSense: Cross starts, Options pauses, Square restarts, and Triangle toggles haptics; enable its touchpad for relative drag steering.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
       const MOBILE_INTRO_COPY = "Steer with the joystick, by dragging in the arena, or with a connected controller.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
@@ -1669,9 +1674,9 @@
         dualSenseBtn.setAttribute("aria-pressed", String(connected));
         dualSenseBtn.setAttribute(
           "aria-label",
-          connected ? "DualSense touchpad enabled" : "Enable DualSense touchpad"
+          connected ? "Test DualSense haptics" : "Enable DualSense touchpad"
         );
-        dualSenseBtn.title = connected ? "DualSense touchpad enabled" : "Enable DualSense touchpad";
+        dualSenseBtn.title = connected ? "Test DualSense haptics" : "Enable DualSense touchpad";
         dualSenseIcon.style.filter = connected ? "drop-shadow(0 0 6px rgba(201, 167, 255, 0.9))" : "";
       }
 
@@ -1717,7 +1722,11 @@
       async function sendDualSenseUsbRumble(strongMagnitude, weakMagnitude) {
         if (!enhancedDualSenseReady()) return false;
         const report = new Uint8Array(DUALSENSE_USB_OUTPUT_REPORT_SIZE);
-        report[0] = 0x01;
+        // Select the classic dual-motor compatibility mode. Both original and
+        // current DualSense firmware support it, and it gives us independent
+        // strong/weak actuators without taking over the controller audio path.
+        report[0] = DUALSENSE_OUTPUT_FLAG0_HAPTICS_SELECT |
+          DUALSENSE_OUTPUT_FLAG0_COMPATIBLE_VIBRATION;
         report[2] = Math.round(clamp(weakMagnitude, 0, 1) * 0xff);
         report[3] = Math.round(clamp(strongMagnitude, 0, 1) * 0xff);
         await dualSenseDevice.sendReport(DUALSENSE_USB_OUTPUT_REPORT_ID, report);
@@ -1770,7 +1779,7 @@
         return true;
       }
 
-      function playWebHidHaptic(pattern, sequence) {
+      function playWebHidHaptic(pattern, sequence, announceFailure = false) {
         (async () => {
           for (const segment of pattern) {
             if (!hapticStillAllowed(sequence)) return;
@@ -1783,7 +1792,12 @@
           if (sequence === hapticSequence && enhancedDualSenseReady()) {
             await sendDualSenseUsbRumble(0, 0);
           }
-        })().catch(() => {});
+        })().catch((error) => {
+          console.warn("DualSense WebHID rumble failed", error);
+          if (announceFailure && sequence === hapticSequence) {
+            setStatus("DualSense rumble output failed", "#ffcf5a");
+          }
+        });
         return true;
       }
 
@@ -1793,13 +1807,16 @@
 
         const sequence = ++hapticSequence;
 
+        // Once the USB DualSense has been authorized, use its deterministic
+        // WebHID output path. Chrome can expose a Gamepad actuator that accepts
+        // effects without producing physical feedback on this controller.
+        if (enhancedDualSenseReady()) {
+          return playWebHidHaptic(pattern, sequence, event === "confirmation");
+        }
+
         const actuator = gamepadHapticActuator(selectGamepad());
         if (actuator) {
           return playGamepadHaptic(actuator, pattern, sequence);
-        }
-
-        if (enhancedDualSenseReady()) {
-          return playWebHidHaptic(pattern, sequence);
         }
 
         if (!deviceHapticsAvailable()) return false;
@@ -2121,6 +2138,20 @@
             : "DualSense connection failed";
           setStatus(copy, "#ffcf5a");
         }
+      }
+
+      function requestOrTestDualSenseDevice() {
+        if (!enhancedDualSenseReady()) {
+          requestDualSenseDevice();
+          return;
+        }
+        if (!hapticsEnabled) {
+          setStatus("Turn haptics on to test rumble", "#ffcf5a");
+          return;
+        }
+        stopHaptics();
+        setStatus("Testing DualSense rumble", "#c9a7ff");
+        playHaptic("confirmation");
       }
 
       async function restoreDualSenseDevice() {
@@ -4013,7 +4044,7 @@
       pauseBtn.addEventListener("click", togglePause);
       muteBtn.addEventListener("click", toggleMute);
       hapticsBtn.addEventListener("click", toggleHaptics);
-      dualSenseBtn.addEventListener("click", requestDualSenseDevice);
+      dualSenseBtn.addEventListener("click", requestOrTestDualSenseDevice);
       restartBtn.addEventListener("click", reset);
       joystick.addEventListener("pointerdown", startJoystick);
       joystick.addEventListener("pointermove", moveJoystick);

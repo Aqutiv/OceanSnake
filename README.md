@@ -65,11 +65,12 @@ http://localhost:8000
 - Gamepad: analog stick or D-pad
 - DualSense: Cross starts or resumes, Options pauses, Square restarts, and Triangle toggles haptics
 - USB DualSense touchpad: select **Enable DualSense touchpad**, then drag on the pad to steer relative to the snake's current position; each new touch re-anchors without moving the snake, and lifting your finger returns to coasting
+- USB DualSense rumble test: after authorization, select the glowing controller icon again to replay the confirmation pattern
 - Buttons: pause, mute, haptics (when supported), restart
 
 ## Haptic Feedback
 
-Haptics are enabled by default on supported devices and can be switched off independently from sound. Ordinary fish, combos, magic fish or color upgrades, invincibility warnings, and collisions use distinct sequenced feedback. The game prefers the standard Gamepad haptic actuator, uses an authorized USB DualSense WebHID connection as a compatible-vibration fallback, and otherwise uses the Vibration API on compatible mobile browsers.
+Haptics are enabled by default on supported devices and can be switched off independently from sound. Ordinary fish, combos, magic fish or color upgrades, invincibility warnings, and collisions use distinct sequenced feedback. An authorized USB DualSense uses WebHID compatible vibration directly; other controllers use the standard Gamepad haptic actuator, with the Vibration API as the mobile fallback.
 
 Browsers that do not expose a haptic API continue without vibration and hide the haptics button. In particular, iPhone Safari does not currently provide a reliable web API for device vibration; an attached compatible gamepad can still provide rumble.
 
