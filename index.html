@@ -738,6 +738,29 @@
       const COMBO_MAX_MULTIPLIER = 5;
       const OCEAN_PARTICLE_COUNT = 170;
       const OCEAN_BASE_SPEED = 18;
+      const OCEAN_PARTICLE_MOBILE_SCALE = 0.6;
+      const ARENA_PALETTE_EASE = 0.1;
+      const CAUSTICS_TILE_SIZE = 256;
+      const CAUSTICS_BLOB_COUNT = 30;
+      const CAUSTICS_BAND_FRACTION = 0.42;
+      const CAUSTICS_LAYER_SCALES = [1, 1.55];
+      const CAUSTICS_LAYER_ALPHAS = [0.08, 0.055];
+      const SURFACE_BAND_ALPHA = 0.06;
+      const GOD_RAY_COUNT = 8;
+      const GOD_RAY_COUNT_MOBILE = 5;
+      const GOD_RAY_FADE_FRACTION = 0.65;
+      const FOG_MAX_ALPHA = 0.32;
+      const FOG_TOP_FRACTION = 0.45;
+      const VIGNETTE_ALPHA = 0.3;
+      const BG_FISH_MAX_SCHOOLS = 2;
+      const BG_FISH_INTERVAL_MIN = 14;
+      const BG_FISH_INTERVAL_MAX = 30;
+      const BG_FISH_SCHOOL_MIN = 4;
+      const BG_FISH_SCHOOL_MAX = 7;
+      const BG_FISH_SPEED_MIN = 30;
+      const BG_FISH_SPEED_MAX = 60;
+      const SHIMMER_DURATION = 1.2;
+      const SHIMMER_MAX_ALPHA = 0.16;
       const BITE_BURST_PARTICLES = 18;
       const BITE_BURST_LIFE = 0.62;
       const SCORE_POPUP_LIFE = 0.9;
@@ -850,6 +873,42 @@
       const lerp = (start, end, amount) => start + (end - start) * amount;
       const unitFromAngle = (angle) => ({ x: Math.cos(angle), y: Math.sin(angle) });
       const nextBonusCountdown = () => Math.floor(rnd(BONUS_MIN_BITES, BONUS_MAX_BITES + 1));
+
+      const hexToRgb = (hex) => {
+        const value = hex.replace("#", "");
+        const full = value.length === 3 ? value.split("").map((c) => c + c).join("") : value;
+        const int = parseInt(full, 16);
+        return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+      };
+      const mixRgb = (base, tint, amount) => ({
+        r: lerp(base.r, tint.r, amount),
+        g: lerp(base.g, tint.g, amount),
+        b: lerp(base.b, tint.b, amount)
+      });
+      const rgbaStr = (color, alpha) =>
+        `rgba(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)}, ${alpha})`;
+      const cloneArenaPalette = (palette) => ({
+        top: { ...palette.top },
+        mid: { ...palette.mid },
+        deep: { ...palette.deep },
+        glow: { ...palette.glow },
+        accent: { ...palette.accent }
+      });
+      const WATER_BASE = {
+        top: hexToRgb("#0a4964"),
+        mid: hexToRgb("#05283e"),
+        deep: hexToRgb("#010914")
+      };
+      const ARENA_PALETTES = FOOD_THEMES.map((theme) => {
+        const main = hexToRgb(theme.main);
+        return {
+          top: mixRgb(WATER_BASE.top, main, 0.11),
+          mid: mixRgb(WATER_BASE.mid, main, 0.08),
+          deep: mixRgb(WATER_BASE.deep, main, 0.04),
+          glow: main,
+          accent: hexToRgb(theme.accent)
+        };
+      });
       const readStoredFlag = (key) => {
         try {
           return localStorage.getItem(key) === "1";
@@ -949,6 +1008,14 @@
       let targetOceanLight;
       let cameraFlow;
       let targetCameraFlow;
+      let arenaPalette;
+      let targetArenaPalette;
+      let arenaPaletteDirty;
+      let arenaGradients;
+      let causticsTile;
+      let bgFish;
+      let nextFishSchoolAt;
+      let shimmerAt;
       let swallowBulges;
       let gulpAt;
       let squintUntil;
@@ -1011,6 +1078,10 @@
         nextTongueAt = rnd(1.5, 3.5);
         deathAt = -1;
         deathBubbleTimer = 0;
+        bgFish = [];
+        nextFishSchoolAt = rnd(5, 12);
+        shimmerAt = -10;
+        arenaGradients = null;
         createOcean();
         updateOceanFlow(true);
         score = 0;
@@ -1180,6 +1251,10 @@
         }
         if (scorePopups) {
           scorePopups.forEach((popup) => scalePointToArena(popup, scaleX, scaleY));
+        }
+        if (bgFish) {
+          bgFish = [];
+          nextFishSchoolAt = (pulse || 0) + rnd(4, 10);
         }
       }
 
@@ -2431,16 +2506,19 @@
       }
 
       function createOcean() {
-        oceanParticles = Array.from({ length: OCEAN_PARTICLE_COUNT }, (_, index) => {
+        const count = Math.round(OCEAN_PARTICLE_COUNT * (isMobileLayout() ? OCEAN_PARTICLE_MOBILE_SCALE : 1));
+        oceanParticles = Array.from({ length: count }, (_, index) => {
           const seed = index + 1;
           const bubble = index % 5 === 0;
+          const plankton = !bubble && seed % 19 === 7;
           return {
             x: (seed * 197) % ARENA.width,
             y: (seed * 311) % ARENA.height,
-            r: bubble ? 1.6 + (seed % 5) * 0.55 : 0.7 + (seed % 7) * 0.18,
+            r: bubble ? 1.6 + (seed % 5) * 0.55 : plankton ? 1.9 + (seed % 3) * 0.4 : 0.7 + (seed % 7) * 0.18,
             depth: 0.35 + ((seed * 37) % 100) / 100 * 0.8,
             sway: (seed * 0.83) % (Math.PI * 2),
-            bubble
+            bubble,
+            plankton
           };
         });
       }
@@ -2460,10 +2538,33 @@
           oceanFlow = { ...targetOceanFlow };
           oceanLight = { ...targetOceanLight };
         }
+        targetArenaPalette = ARENA_PALETTES[foodLevel % ARENA_PALETTES.length];
+        if (snap || !arenaPalette) {
+          arenaPalette = cloneArenaPalette(targetArenaPalette);
+          arenaPaletteDirty = true;
+        }
+      }
+
+      function easeArenaPalette(dt) {
+        if (!arenaPalette || !targetArenaPalette) return;
+        const amount = 1 - Math.pow(ARENA_PALETTE_EASE, dt);
+        let maxDelta = 0;
+        for (const key of ["top", "mid", "deep", "glow", "accent"]) {
+          const current = arenaPalette[key];
+          const targetColor = targetArenaPalette[key];
+          for (const channel of ["r", "g", "b"]) {
+            maxDelta = Math.max(maxDelta, Math.abs(targetColor[channel] - current[channel]));
+            current[channel] = lerp(current[channel], targetColor[channel], amount);
+          }
+        }
+        if (maxDelta > 0.35) {
+          arenaPaletteDirty = true;
+        }
       }
 
       function easeOcean(dt) {
         if (!targetOceanFlow || !targetOceanLight) return;
+        easeArenaPalette(dt);
         const amount = 1 - Math.pow(0.002, dt);
         oceanFlow.x = lerp(oceanFlow.x, targetOceanFlow.x, amount);
         oceanFlow.y = lerp(oceanFlow.y, targetOceanFlow.y, amount);
@@ -2497,6 +2598,48 @@
           if (particle.y < -14) particle.y += ARENA.height + 28;
           if (particle.y > ARENA.height + 14) particle.y -= ARENA.height + 28;
         });
+        updateBgFish(dt);
+      }
+
+      function spawnFishSchool() {
+        const mobileScale = isMobileLayout() ? 0.7 : 1;
+        const count = Math.floor(rnd(BG_FISH_SCHOOL_MIN, BG_FISH_SCHOOL_MAX + 1));
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        const fish = [];
+        let span = 0;
+        for (let i = 0; i < count; i += 1) {
+          span += i === 0 ? 0 : rnd(14, 26) * mobileScale;
+          fish.push({
+            dx: -span,
+            dy: rnd(-18, 18) * mobileScale,
+            phase: rnd(0, Math.PI * 2),
+            size: rnd(5, 9) * mobileScale
+          });
+        }
+        bgFish.push({
+          x: dir > 0 ? -span - 30 : ARENA.width + span + 30,
+          y: ARENA.height * rnd(0.3, 0.62),
+          dir,
+          speed: rnd(BG_FISH_SPEED_MIN, BG_FISH_SPEED_MAX) * mobileScale,
+          span,
+          fish
+        });
+        nextFishSchoolAt = pulse + rnd(BG_FISH_INTERVAL_MIN, BG_FISH_INTERVAL_MAX);
+      }
+
+      function updateBgFish(dt) {
+        if (!bgFish) return;
+        if (pulse >= nextFishSchoolAt && bgFish.length < BG_FISH_MAX_SCHOOLS) {
+          spawnFishSchool();
+        }
+        for (let i = bgFish.length - 1; i >= 0; i -= 1) {
+          const school = bgFish[i];
+          school.x += school.dir * school.speed * dt;
+          const trailing = school.x - school.span * school.dir;
+          if ((school.dir > 0 && trailing > ARENA.width + 40) || (school.dir < 0 && trailing < -40)) {
+            bgFish.splice(i, 1);
+          }
+        }
       }
 
       function spawnBiteBurst(point, theme, magic = false) {
@@ -3204,6 +3347,7 @@
           foodLevel += 1;
           foodLevelBites = 0;
           updateOceanFlow();
+          shimmerAt = pulse;
           resetCombo();
           if (bonusFood) {
             clearBonusFood();
@@ -3552,7 +3696,103 @@
         }
       }
 
-      function drawDepthLayers(theme, cameraX, cameraY) {
+      function createCausticsTile() {
+        const size = CAUSTICS_TILE_SIZE;
+        causticsTile = document.createElement("canvas");
+        causticsTile.width = size;
+        causticsTile.height = size;
+        const tileCtx = causticsTile.getContext("2d");
+        tileCtx.strokeStyle = "#ffffff";
+        tileCtx.lineCap = "round";
+        for (let i = 0; i < CAUSTICS_BLOB_COUNT; i += 1) {
+          const seed = i * 131 + 17;
+          const x = (seed * 97) % size;
+          const y = (seed * 61) % size;
+          const radius = 9 + (seed % 23);
+          const squash = 0.55 + ((seed % 7) / 7) * 0.5;
+          const rotation = ((seed % 13) / 13) * Math.PI;
+          const start = ((seed % 11) / 11) * Math.PI * 2;
+          const sweep = Math.PI * (0.9 + ((seed % 5) / 5) * 0.9);
+          tileCtx.lineWidth = 1.5 + (seed % 4) * 0.8;
+          tileCtx.globalAlpha = 0.22 + ((seed % 6) / 6) * 0.4;
+          for (const wrapX of [-size, 0, size]) {
+            for (const wrapY of [-size, 0, size]) {
+              tileCtx.beginPath();
+              tileCtx.ellipse(x + wrapX, y + wrapY, radius, radius * squash, rotation, start, start + sweep);
+              tileCtx.stroke();
+            }
+          }
+        }
+      }
+
+      function ensureArenaGradients(pal) {
+        const key = `${ARENA.width}x${ARENA.height}`;
+        if (arenaGradients && arenaGradients.key === key && !arenaPaletteDirty) return;
+        const width = ARENA.width;
+        const height = ARENA.height;
+        const bg = ctx.createLinearGradient(0, 0, 0, height);
+        bg.addColorStop(0, rgbaStr(pal.top, 1));
+        bg.addColorStop(0.42, rgbaStr(pal.mid, 1));
+        bg.addColorStop(1, rgbaStr(pal.deep, 1));
+        const glow = ctx.createRadialGradient(width * 0.5, 0, 0, width * 0.5, 0, height * 0.78);
+        glow.addColorStop(0, "rgba(126, 231, 255, 0.18)");
+        glow.addColorStop(0.45, rgbaStr(pal.glow, 0.72));
+        glow.addColorStop(1, "rgba(0, 0, 0, 0)");
+        const rayCyan = ctx.createLinearGradient(0, 0, 0, height * GOD_RAY_FADE_FRACTION);
+        rayCyan.addColorStop(0, "rgba(126, 231, 255, 0.5)");
+        rayCyan.addColorStop(1, "rgba(126, 231, 255, 0)");
+        const rayGlow = ctx.createLinearGradient(0, 0, 0, height * GOD_RAY_FADE_FRACTION);
+        rayGlow.addColorStop(0, rgbaStr(pal.glow, 0.5));
+        rayGlow.addColorStop(1, rgbaStr(pal.glow, 0));
+        const fog = ctx.createLinearGradient(0, height * FOG_TOP_FRACTION, 0, height);
+        fog.addColorStop(0, rgbaStr(pal.deep, 0));
+        fog.addColorStop(1, rgbaStr(pal.deep, FOG_MAX_ALPHA));
+        const vignette = ctx.createRadialGradient(
+          width * 0.5,
+          height * 0.5,
+          Math.min(width, height) * 0.42,
+          width * 0.5,
+          height * 0.5,
+          Math.hypot(width, height) * 0.55
+        );
+        vignette.addColorStop(0, "rgba(1, 6, 12, 0)");
+        vignette.addColorStop(1, `rgba(1, 6, 12, ${VIGNETTE_ALPHA})`);
+        arenaGradients = { key, bg, glow, rayCyan, rayGlow, fog, vignette };
+        arenaPaletteDirty = false;
+      }
+
+      function drawBgFish() {
+        if (!bgFish || !bgFish.length) return;
+        ctx.save();
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = "rgba(4, 18, 28, 0.6)";
+        ctx.globalAlpha = 0.55;
+        bgFish.forEach((school) => {
+          school.fish.forEach((fish) => {
+            const size = fish.size;
+            ctx.save();
+            ctx.translate(
+              school.x + fish.dx * school.dir,
+              school.y + fish.dy + Math.sin(pulse * 2.1 + fish.phase) * 4
+            );
+            ctx.scale(school.dir, 1);
+            ctx.beginPath();
+            ctx.moveTo(size, 0);
+            ctx.quadraticCurveTo(0, -size * 0.45, -size * 0.7, 0);
+            ctx.lineTo(-size * 1.15, -size * 0.4);
+            ctx.lineTo(-size * 0.95, 0);
+            ctx.lineTo(-size * 1.15, size * 0.4);
+            ctx.lineTo(-size * 0.7, 0);
+            ctx.quadraticCurveTo(0, size * 0.45, size, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          });
+        });
+        ctx.restore();
+      }
+
+      function drawDepthLayers(pal, cameraX, cameraY) {
         ctx.save();
         ctx.globalCompositeOperation = "source-over";
 
@@ -3574,7 +3814,7 @@
           ctx.closePath();
           ctx.fill();
 
-          ctx.strokeStyle = layer === 2 ? theme.glow : "rgba(126, 231, 255, 0.18)";
+          ctx.strokeStyle = layer === 2 ? rgbaStr(pal.glow, 0.72) : "rgba(126, 231, 255, 0.18)";
           ctx.lineWidth = 1 + layer * 0.4;
           ctx.globalAlpha = 0.035 + layer * 0.03;
           for (let i = 0; i < 10; i += 1) {
@@ -3600,36 +3840,65 @@
       }
 
       function drawArena() {
-        const theme = currentFoodTheme();
+        const pal = arenaPalette || ARENA_PALETTES[0];
+        if (!causticsTile) createCausticsTile();
+        ensureArenaGradients(pal);
+        const mobile = isMobileLayout();
         const flowMotion = oceanFlow ? Math.hypot(oceanFlow.x, oceanFlow.y) / OCEAN_BASE_SPEED : 1;
         const cameraX = cameraFlow ? cameraFlow.x : 0;
         const cameraY = cameraFlow ? cameraFlow.y : 0;
-        const gradient = ctx.createLinearGradient(0, 0, 0, ARENA.height);
-        gradient.addColorStop(0, "#0a4964");
-        gradient.addColorStop(0.42, "#05283e");
-        gradient.addColorStop(1, "#010914");
-        ctx.fillStyle = gradient;
+        ctx.fillStyle = arenaGradients.bg;
         ctx.fillRect(0, 0, ARENA.width, ARENA.height);
 
         ctx.save();
         ctx.globalCompositeOperation = "screen";
         const cameraMagnitude = Math.hypot(cameraX, cameraY);
 
-        const glow = ctx.createRadialGradient(ARENA.width * 0.5, 0, 0, ARENA.width * 0.5, 0, ARENA.height * 0.78);
-        glow.addColorStop(0, "rgba(126, 231, 255, 0.18)");
-        glow.addColorStop(0.45, theme.glow);
-        glow.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.globalAlpha = 0.2;
-        ctx.fillStyle = glow;
+        ctx.fillStyle = arenaGradients.glow;
         ctx.fillRect(0, 0, ARENA.width, ARENA.height);
 
-        drawDepthLayers(theme, cameraX, cameraY);
+        const causticsBand = ARENA.height * CAUSTICS_BAND_FRACTION;
+        const causticsLayers = mobile ? 1 : CAUSTICS_LAYER_SCALES.length;
+        for (let layer = 0; layer < causticsLayers; layer += 1) {
+          const tile = CAUSTICS_TILE_SIZE * CAUSTICS_LAYER_SCALES[layer];
+          const scrollX = pulse * (7 + layer * 5) + oceanFlow.x * (0.35 + layer * 0.2);
+          const offsetX = ((scrollX % tile) + tile) % tile;
+          const scrollY = pulse * (2.5 + layer * 1.5);
+          const offsetY = ((scrollY % tile) + tile) % tile;
+          for (let y = -offsetY; y < causticsBand; y += tile) {
+            const rowAlpha = CAUSTICS_LAYER_ALPHAS[layer] * Math.max(0, 1 - (y + tile * 0.6) / causticsBand);
+            if (rowAlpha <= 0.004) continue;
+            ctx.globalAlpha = rowAlpha;
+            for (let x = -offsetX; x < ARENA.width; x += tile) {
+              ctx.drawImage(causticsTile, x, y, tile, tile);
+            }
+          }
+        }
 
-        for (let i = 0; i < 8; i += 1) {
-          const beamX = (oceanLight.x + i * 155 + Math.sin(pulse * 0.13 + i) * 18) % (ARENA.width + 180) - 90;
+        ctx.globalAlpha = SURFACE_BAND_ALPHA;
+        ctx.fillStyle = "rgba(226, 251, 255, 1)";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(ARENA.width, 0);
+        ctx.lineTo(ARENA.width, 10);
+        for (let x = ARENA.width; x >= 0; x -= 32) {
+          ctx.lineTo(x, 10 + Math.sin(x * 0.02 + pulse * 0.9) * 3);
+        }
+        ctx.lineTo(0, 10);
+        ctx.closePath();
+        ctx.fill();
+
+        drawDepthLayers(pal, cameraX, cameraY);
+        drawBgFish();
+
+        const beamCount = mobile ? GOD_RAY_COUNT_MOBILE : GOD_RAY_COUNT;
+        const beamSpacing = (ARENA.width + 180) / beamCount;
+        for (let i = 0; i < beamCount; i += 1) {
+          const beamX = (oceanLight.x + i * beamSpacing + Math.sin(pulse * 0.13 + i) * 18) % (ARENA.width + 180) - 90;
           const lean = oceanLight.lean * ARENA.height + Math.sin(pulse * 0.18 + i) * 16;
-          ctx.globalAlpha = 0.035 + (i % 3) * 0.013;
-          ctx.fillStyle = i % 2 === 0 ? "rgba(126, 231, 255, 0.5)" : theme.glow;
+          ctx.globalAlpha = 0.05 + (i % 3) * 0.018;
+          ctx.fillStyle = i % 2 === 0 ? arenaGradients.rayCyan : arenaGradients.rayGlow;
           ctx.beginPath();
           ctx.moveTo(beamX, 0);
           ctx.lineTo(beamX + 80, 0);
@@ -3639,10 +3908,11 @@
           ctx.fill();
         }
 
+        const planktonColor = rgbaStr(pal.accent, 0.6);
+        const deepMoteColor = rgbaStr(pal.glow, 0.72);
         oceanParticles.forEach((particle) => {
-          const alpha = particle.bubble ? 0.2 + particle.depth * 0.22 : 0.08 + particle.depth * 0.16;
-          ctx.globalAlpha = alpha;
           if (particle.bubble) {
+            ctx.globalAlpha = 0.2 + particle.depth * 0.22;
             if (cameraMagnitude > 8) {
               ctx.strokeStyle = "rgba(226, 251, 255, 0.18)";
               ctx.lineWidth = Math.max(1, particle.r * 0.38);
@@ -3657,8 +3927,15 @@
             ctx.arc(particle.x, particle.y, particle.r, 0, Math.PI * 2);
             ctx.stroke();
             ctx.fillStyle = "rgba(226, 251, 255, 0.12)";
+          } else if (particle.plankton) {
+            ctx.globalAlpha =
+              (0.1 + particle.depth * 0.2) * (0.6 + 0.4 * Math.sin(pulse * 2 + particle.sway));
+            ctx.fillStyle = planktonColor;
           } else {
-            ctx.fillStyle = particle.depth > 0.8 ? theme.glow : "rgba(194, 238, 246, 0.52)";
+            ctx.globalAlpha =
+              (0.08 + particle.depth * 0.16) *
+              (0.72 + 0.28 * Math.sin(pulse * (1.1 + particle.depth * 1.6) + particle.sway * 7));
+            ctx.fillStyle = particle.depth > 0.8 ? deepMoteColor : "rgba(194, 238, 246, 0.52)";
           }
           ctx.beginPath();
           ctx.arc(particle.x, particle.y, particle.r, 0, Math.PI * 2);
@@ -3679,7 +3956,37 @@
           ctx.stroke();
         }
 
-        ctx.strokeStyle = theme.glow;
+        ctx.save();
+        ctx.globalAlpha = 0.85 + Math.sin(pulse * 0.35) * 0.15;
+        ctx.fillStyle = arenaGradients.fog;
+        ctx.fillRect(0, ARENA.height * FOG_TOP_FRACTION, ARENA.width, ARENA.height * (1 - FOG_TOP_FRACTION));
+        ctx.restore();
+
+        const shimmerT = (pulse - shimmerAt) / SHIMMER_DURATION;
+        if (shimmerT >= 0 && shimmerT <= 1) {
+          const sweepX = (-0.35 + shimmerT * 1.7) * ARENA.width;
+          const shimmer = ctx.createLinearGradient(
+            sweepX - ARENA.width * 0.28,
+            0,
+            sweepX + ARENA.width * 0.28,
+            ARENA.height * 0.9
+          );
+          shimmer.addColorStop(0, "rgba(255, 255, 255, 0)");
+          shimmer.addColorStop(0.5, rgbaStr(pal.glow, 0.5));
+          shimmer.addColorStop(1, "rgba(255, 255, 255, 0)");
+          ctx.save();
+          ctx.globalCompositeOperation = "screen";
+          ctx.globalAlpha = SHIMMER_MAX_ALPHA * Math.sin(Math.PI * shimmerT);
+          ctx.fillStyle = shimmer;
+          ctx.fillRect(0, 0, ARENA.width, ARENA.height);
+          ctx.restore();
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = arenaGradients.vignette;
+        ctx.fillRect(0, 0, ARENA.width, ARENA.height);
+
+        ctx.strokeStyle = rgbaStr(pal.glow, 0.72);
         ctx.lineWidth = 4;
         ctx.strokeRect(12, 12, ARENA.width - 24, ARENA.height - 24);
       }
@@ -4353,11 +4660,8 @@
           updateInvincibilityWarning();
         }
 
-        if (!paused && gameState !== "over") {
-          moveOcean(dt);
-        }
-
         if (!paused) {
+          moveOcean(dt);
           updateBiteParticles(dt);
           updateScorePopups(dt);
           updateHeadFx(dt);
