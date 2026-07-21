@@ -825,6 +825,25 @@
         { main: "#f6f871", accent: "#7ee7ff", glow: "rgba(246, 248, 113, 0.72)" }
       ];
 
+      const HEAD_STATE_COLORS = {
+        normal: { base: "#31d0aa", light: "#7df2d3", dark: "#157f66", glow: "rgba(49, 208, 170, 0.62)" },
+        invincible: { base: "#c9a7ff", light: "#e6d6ff", dark: "#7d5fc2", glow: "rgba(201, 167, 255, 0.95)" },
+        warning: { base: "#ffd166", light: "#ffe8ad", dark: "#c2903a", glow: "rgba(255, 207, 90, 0.95)" },
+        dead: { base: "#ff5f6d", light: "#ff9aa4", dark: "#a83a45", glow: "rgba(255, 95, 109, 0.8)" }
+      };
+      const GULP_DURATION = 0.3;
+      const SQUINT_DURATION = 0.35;
+      const BLINK_DURATION = 0.13;
+      const TONGUE_FLICK_DURATION = 0.4;
+      const BULGE_SPEED_SEGMENTS = 34;
+      const BULGE_WIDTH_SEGMENTS = 5;
+      const BULGE_LIMIT = 5;
+      const DEATH_SHAKE_DURATION = 0.45;
+      const DEATH_FLASH_DURATION = 0.5;
+      const DEATH_GRAY_STAGGER = 1.0;
+      const DEATH_BUBBLE_WINDOW = 1.6;
+      const DEATH_BUBBLE_INTERVAL = 0.12;
+
       const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
       const rnd = (min, max) => Math.random() * (max - min) + min;
       const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -930,6 +949,15 @@
       let targetOceanLight;
       let cameraFlow;
       let targetCameraFlow;
+      let swallowBulges;
+      let gulpAt;
+      let squintUntil;
+      let nextBlinkAt;
+      let blinkStartedAt;
+      let nextTongueAt;
+      let tongueStartedAt;
+      let deathAt;
+      let deathBubbleTimer;
 
       bestEl.textContent = best;
 
@@ -974,6 +1002,15 @@
         scorePopups = [];
         cameraFlow = { x: 0, y: 0 };
         targetCameraFlow = { x: 0, y: 0 };
+        swallowBulges = [];
+        gulpAt = -10;
+        squintUntil = 0;
+        blinkStartedAt = -10;
+        nextBlinkAt = rnd(2.5, 5.5);
+        tongueStartedAt = -10;
+        nextTongueAt = rnd(1.5, 3.5);
+        deathAt = -1;
+        deathBubbleTimer = 0;
         createOcean();
         updateOceanFlow(true);
         score = 0;
@@ -2514,6 +2551,59 @@
         }
       }
 
+      function headAngle() {
+        const head = snake[0];
+        const next = snake[1] || { x: head.x - 1, y: head.y };
+        return Math.atan2(head.y - next.y, head.x - next.x);
+      }
+
+      function updateHeadFx(dt) {
+        if (!snake || !snake.length) return;
+
+        if (pulse >= nextBlinkAt) {
+          blinkStartedAt = pulse;
+          nextBlinkAt = pulse + BLINK_DURATION + rnd(2.5, 5.5);
+        }
+
+        if (gameState !== "over" && pulse >= nextTongueAt) {
+          tongueStartedAt = pulse;
+          nextTongueAt = pulse + TONGUE_FLICK_DURATION + rnd(2, 4);
+        }
+
+        for (let i = swallowBulges.length - 1; i >= 0; i -= 1) {
+          swallowBulges[i].pos += BULGE_SPEED_SEGMENTS * dt;
+          if (swallowBulges[i].pos > snake.length + BULGE_WIDTH_SEGMENTS) {
+            swallowBulges.splice(i, 1);
+          }
+        }
+
+        if (deathAt >= 0 && pulse - deathAt < DEATH_BUBBLE_WINDOW) {
+          deathBubbleTimer += dt;
+          const scale = snakeScale();
+          const mouthAngle = headAngle();
+          const mouthX = snake[0].x + Math.cos(mouthAngle) * headRadius() * 1.1;
+          const mouthY = snake[0].y + Math.sin(mouthAngle) * headRadius() * 1.1;
+          while (deathBubbleTimer >= DEATH_BUBBLE_INTERVAL) {
+            deathBubbleTimer -= DEATH_BUBBLE_INTERVAL;
+            const radius = rnd(1.6, 3.6) * scale;
+            biteParticles.push({
+              x: mouthX + rnd(-3, 3) * scale,
+              y: mouthY + rnd(-3, 3) * scale,
+              vx: rnd(-14, 14) * scale,
+              vy: -rnd(30, 70) * scale,
+              r: radius,
+              maxR: radius * rnd(1.4, 2),
+              age: 0,
+              life: rnd(0.9, 1.4),
+              color: "#dff4ff",
+              glow: "rgba(226, 251, 255, 0.6)",
+              bubble: true,
+              wobble: rnd(0, Math.PI * 2)
+            });
+          }
+        }
+      }
+
       function spawnScorePopup(point, points, multiplier, theme) {
         if (!scorePopups || !point) return;
 
@@ -2919,6 +3009,11 @@
             { main: "#c9a7ff", accent: "#7ee7ff", glow: "rgba(201, 167, 255, 0.95)" },
             true
           );
+          gulpAt = pulse;
+          squintUntil = pulse + SQUINT_DURATION;
+          if (swallowBulges.length < BULGE_LIMIT) {
+            swallowBulges.push({ pos: 0 });
+          }
           grantInvincibility();
           clearBonusFood();
           return;
@@ -3092,6 +3187,11 @@
         growSnake();
         spawnBiteBurst(eatenFood, eatenTheme);
         spawnScorePopup(eatenFood, points, combo.multiplier, eatenTheme);
+        gulpAt = pulse;
+        squintUntil = pulse + SQUINT_DURATION;
+        if (swallowBulges.length < BULGE_LIMIT) {
+          swallowBulges.push({ pos: 0 });
+        }
         biteSelfGraceDistance = Math.max(biteSelfGraceDistance, biteSelfGraceLimit());
         foodLevelBites += 1;
         bonusBiteCountdown -= 1;
@@ -3175,6 +3275,9 @@
 
       function endGame() {
         gameState = "over";
+        deathAt = pulse;
+        deathBubbleTimer = 0;
+        swallowBulges.length = 0;
         cancelCanvasDrag();
         resetJoystick();
         target = { ...snake[0] };
@@ -3779,11 +3882,22 @@
           drawInvincibleField();
         }
 
+        const deadTime = deathAt >= 0 ? pulse - deathAt : -1;
+
         for (let i = snake.length - 1; i > 0; i -= 1) {
           const part = snake[i];
           const t = i / snake.length;
-          const radius = bodySize * (0.82 + (1 - t) * 0.22);
+          let radiusMul = 1;
+          for (let b = 0; b < swallowBulges.length; b += 1) {
+            const bulgeDist = Math.abs(i - swallowBulges[b].pos);
+            if (bulgeDist < BULGE_WIDTH_SEGMENTS) {
+              const k = 1 - bulgeDist / BULGE_WIDTH_SEGMENTS;
+              radiusMul = Math.max(radiusMul, 1 + 0.42 * k * k * (3 - 2 * k));
+            }
+          }
+          const radius = bodySize * (0.82 + (1 - t) * 0.22) * radiusMul;
           const hueMix = Math.round(180 + (1 - t) * 20);
+          const grayMix = deadTime >= 0 ? clamp((deadTime - t * DEATH_GRAY_STAGGER) / 0.25, 0, 1) : 0;
 
           if (invincible && i % 2 === 0) {
             ctx.fillStyle = `rgba(201, 167, 255, ${0.16 + invinciblePulse * 0.16})`;
@@ -3792,12 +3906,12 @@
             ctx.fill();
           }
 
-          ctx.fillStyle = `hsl(${hueMix} 62% ${34 + (1 - t) * 16}%)`;
+          ctx.fillStyle = `hsl(${hueMix} ${Math.round(62 - grayMix * 54)}% ${Math.round(34 + (1 - t) * 16 - grayMix * 6)}%)`;
           ctx.beginPath();
           ctx.arc(part.x, part.y, radius, 0, Math.PI * 2);
           ctx.fill();
 
-          ctx.fillStyle = "rgba(255, 255, 255, 0.12)";
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.12 * (1 - grayMix)})`;
           ctx.beginPath();
           ctx.arc(part.x - radius * 0.28, part.y - radius * 0.32, Math.max(1.5, radius * 0.18), 0, Math.PI * 2);
           ctx.fill();
@@ -3806,15 +3920,73 @@
         const head = snake[0];
         const next = snake[1] || { x: head.x - 1, y: head.y };
         const angle = Math.atan2(head.y - next.y, head.x - next.x);
+        const dead = gameState === "over";
+        const pal = dead
+          ? HEAD_STATE_COLORS.dead
+          : warning
+            ? HEAD_STATE_COLORS.warning
+            : invincible
+              ? HEAD_STATE_COLORS.invincible
+              : HEAD_STATE_COLORS.normal;
+
+        const gulpT = clamp((pulse - gulpAt) / GULP_DURATION, 0, 1);
+        const gulp = gulpT < 1 ? Math.sin(gulpT * Math.PI) * (1 - gulpT * 0.4) : 0;
+
+        let mouthOpen = 0;
+        if (!dead && gulpT >= 1) {
+          let nearest = dist(head, food);
+          if (bonusFood) nearest = Math.min(nearest, dist(head, bonusFood));
+          mouthOpen = clamp(1 - (nearest - headSize * 1.3) / (headSize * 3.2), 0, 1);
+        }
+
+        const blinkT = clamp((pulse - blinkStartedAt) / BLINK_DURATION, 0, 1);
+        const blink = blinkT < 1 ? Math.sin(blinkT * Math.PI) : 0;
+        const squinting = !dead && pulse < squintUntil;
 
         ctx.save();
         ctx.translate(head.x, head.y);
         ctx.rotate(angle);
-        ctx.shadowColor = warning ? "rgba(255, 207, 90, 0.95)" : invincible ? "rgba(201, 167, 255, 0.95)" : "rgba(49, 208, 170, 0.62)";
+        ctx.scale(1 - 0.16 * gulp, 1 + 0.2 * gulp);
+
+        const finFlutter = dead ? 0 : Math.sin(pulse * 6) * headSize * 0.08;
+        const finDroop = dead ? headSize * 0.2 : 0;
+        ctx.fillStyle = pal.dark;
+        ctx.globalAlpha = 0.85;
+        for (let side = -1; side <= 1; side += 2) {
+          ctx.beginPath();
+          ctx.moveTo(-headSize * 0.15, side * headSize * 0.55);
+          ctx.quadraticCurveTo(
+            -headSize * 0.7,
+            side * (headSize * 1.15 + finDroop),
+            -headSize + finFlutter,
+            side * (headSize * 1.25 + finDroop)
+          );
+          ctx.quadraticCurveTo(-headSize * 0.75, side * headSize * 0.7, -headSize * 0.35, side * headSize * 0.45);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.shadowColor = pal.glow;
         ctx.shadowBlur = invincible ? 30 : 18;
-        ctx.fillStyle = gameState === "over" ? "#ff5f6d" : warning ? "#ffd166" : invincible ? "#c9a7ff" : "#31d0aa";
+        const headGradient = ctx.createRadialGradient(
+          -headSize * 0.15,
+          -headSize * 0.4,
+          headSize * 0.15,
+          0,
+          0,
+          headSize * 1.5
+        );
+        headGradient.addColorStop(0, pal.light);
+        headGradient.addColorStop(0.55, pal.base);
+        headGradient.addColorStop(1, pal.dark);
+        ctx.fillStyle = headGradient;
         ctx.beginPath();
-        ctx.ellipse(0, 0, headSize * 1.16, headSize, 0, 0, Math.PI * 2);
+        ctx.moveTo(headSize * 1.3, 0);
+        ctx.bezierCurveTo(headSize * 1.05, -headSize * 0.72, headSize * 0.2, -headSize * 1.05, -headSize * 0.45, -headSize * 0.9);
+        ctx.bezierCurveTo(-headSize * 1.15, -headSize * 0.6, -headSize * 1.15, headSize * 0.6, -headSize * 0.45, headSize * 0.9);
+        ctx.bezierCurveTo(headSize * 0.2, headSize * 1.05, headSize * 1.05, headSize * 0.72, headSize * 1.3, 0);
+        ctx.closePath();
         ctx.fill();
         ctx.shadowBlur = 0;
 
@@ -3832,20 +4004,115 @@
           ctx.restore();
         }
 
-        ctx.fillStyle = "#06121b";
-        ctx.beginPath();
-        ctx.arc(headSize * 0.35, -headSize * 0.35, Math.max(1.6, headSize * 0.19), 0, Math.PI * 2);
-        ctx.arc(headSize * 0.35, headSize * 0.35, Math.max(1.6, headSize * 0.19), 0, Math.PI * 2);
-        ctx.fill();
+        if (mouthOpen > 0.02) {
+          const halfAngle = mouthOpen * 0.55;
+          ctx.fillStyle = "#06222f";
+          ctx.beginPath();
+          ctx.moveTo(headSize * 0.45, 0);
+          ctx.arc(headSize * 0.45, 0, headSize * 0.9, -halfAngle, halfAngle);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = pal.dark;
+          ctx.lineWidth = Math.max(1, headSize * 0.06);
+          ctx.stroke();
+        } else if (!dead) {
+          ctx.strokeStyle = pal.dark;
+          ctx.lineWidth = Math.max(1, headSize * 0.06);
+          ctx.beginPath();
+          ctx.moveTo(headSize * 0.75, headSize * 0.16);
+          ctx.quadraticCurveTo(headSize * 1.05, headSize * 0.26, headSize * 1.22, headSize * 0.1);
+          ctx.stroke();
+        }
 
-        ctx.strokeStyle = "#ffd166";
-        ctx.lineWidth = Math.max(1.2, 2 * snakeScale());
-        ctx.beginPath();
-        ctx.moveTo(headSize * 0.86, 0);
-        ctx.lineTo(headSize * 1.42, -headSize * 0.24);
-        ctx.moveTo(headSize * 0.86, 0);
-        ctx.lineTo(headSize * 1.42, headSize * 0.24);
-        ctx.stroke();
+        ctx.strokeStyle = pal.dark;
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = Math.max(1, headSize * 0.07);
+        for (let side = -1; side <= 1; side += 2) {
+          for (let g = 0; g < 2; g += 1) {
+            const gillX = -headSize * (0.1 + g * 0.26);
+            ctx.beginPath();
+            ctx.moveTo(gillX, side * headSize * 0.28);
+            ctx.quadraticCurveTo(
+              gillX - headSize * 0.18,
+              side * headSize * 0.5,
+              gillX - headSize * 0.05,
+              side * headSize * 0.72
+            );
+            ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = 1;
+
+        const eyeX = headSize * 0.38;
+        const eyeY = headSize * 0.42;
+        if (dead) {
+          ctx.strokeStyle = "#2b0d12";
+          ctx.lineWidth = Math.max(1.4, headSize * 0.09);
+          const arm = headSize * 0.2;
+          for (let side = -1; side <= 1; side += 2) {
+            const ey = side * eyeY;
+            ctx.beginPath();
+            ctx.moveTo(eyeX - arm, ey - arm);
+            ctx.lineTo(eyeX + arm, ey + arm);
+            ctx.moveTo(eyeX + arm, ey - arm);
+            ctx.lineTo(eyeX - arm, ey + arm);
+            ctx.stroke();
+          }
+        } else if (squinting) {
+          ctx.strokeStyle = "#06121b";
+          ctx.lineWidth = Math.max(1.4, headSize * 0.09);
+          for (let side = -1; side <= 1; side += 2) {
+            ctx.beginPath();
+            ctx.arc(eyeX, side * eyeY + headSize * 0.1, headSize * 0.22, Math.PI * 1.15, Math.PI * 1.85);
+            ctx.stroke();
+          }
+        } else {
+          const scleraHeight = headSize * 0.24 * Math.max(0.08, 1 - blink * 0.92);
+          const foodAngle = Math.atan2(food.y - head.y, food.x - head.x) - angle;
+          const pupilScale = mouthOpen > 0.6 ? 1.15 : 1;
+          const pupilX = Math.cos(foodAngle) * headSize * 0.08;
+          const pupilY = Math.sin(foodAngle) * headSize * 0.08;
+          for (let side = -1; side <= 1; side += 2) {
+            const ey = side * eyeY;
+            ctx.fillStyle = "#eef8ff";
+            ctx.beginPath();
+            ctx.ellipse(eyeX, ey, headSize * 0.24, scleraHeight, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = pal.dark;
+            ctx.lineWidth = Math.max(1, headSize * 0.05);
+            ctx.stroke();
+            if (blink < 0.85) {
+              ctx.fillStyle = "#06121b";
+              ctx.beginPath();
+              ctx.arc(eyeX + pupilX, ey + pupilY, Math.max(1.4, headSize * 0.12) * pupilScale, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+              ctx.beginPath();
+              ctx.arc(
+                eyeX + pupilX - headSize * 0.045,
+                ey + pupilY - headSize * 0.045,
+                Math.max(0.8, headSize * 0.045),
+                0,
+                Math.PI * 2
+              );
+              ctx.fill();
+            }
+          }
+        }
+
+        const tongueT = clamp((pulse - tongueStartedAt) / TONGUE_FLICK_DURATION, 0, 1);
+        if (!dead && tongueT < 1 && mouthOpen < 0.5) {
+          const ext = Math.sin(tongueT * Math.PI);
+          const waggle = Math.sin(pulse * 30) * headSize * 0.05;
+          ctx.strokeStyle = "#ffd166";
+          ctx.lineWidth = Math.max(1.2, 2 * snakeScale());
+          ctx.beginPath();
+          ctx.moveTo(headSize * 0.95, 0);
+          ctx.lineTo(headSize * (0.95 + 0.55 * ext), -headSize * 0.24 * ext + waggle);
+          ctx.moveTo(headSize * 0.95, 0);
+          ctx.lineTo(headSize * (0.95 + 0.55 * ext), headSize * 0.24 * ext + waggle);
+          ctx.stroke();
+        }
         ctx.restore();
       }
 
@@ -3887,7 +4154,27 @@
         ctx.restore();
       }
 
+      function drawDeathFlash(deadTime) {
+        if (!(deadTime < DEATH_FLASH_DURATION)) return;
+        const fade = 1 - deadTime / DEATH_FLASH_DURATION;
+        const centerX = ARENA.width * 0.5;
+        const centerY = ARENA.height * 0.5;
+        const outer = Math.hypot(centerX, centerY);
+        const gradient = ctx.createRadialGradient(centerX, centerY, outer * 0.35, centerX, centerY, outer);
+        gradient.addColorStop(0, "rgba(255, 70, 80, 0)");
+        gradient.addColorStop(1, `rgba(255, 70, 80, ${0.4 * fade})`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, ARENA.width, ARENA.height);
+      }
+
       function draw() {
+        const deadTime = deathAt >= 0 ? pulse - deathAt : Infinity;
+        const shaken = deadTime < DEATH_SHAKE_DURATION;
+        if (shaken) {
+          const amp = 9 * snakeScale() * (1 - deadTime / DEATH_SHAKE_DURATION);
+          ctx.save();
+          ctx.translate(Math.sin(deadTime * 68) * amp, Math.cos(deadTime * 83) * amp * 0.7);
+        }
         drawArena();
         drawFood();
         drawBonusFood();
@@ -3895,6 +4182,10 @@
         drawTargetLine();
         drawSnake();
         drawScorePopups();
+        if (shaken) {
+          ctx.restore();
+        }
+        drawDeathFlash(deadTime);
       }
 
       function setPaused(nextPaused, reason = "manual") {
@@ -4005,8 +4296,12 @@
 
         if (!paused && gameState !== "over") {
           moveOcean(dt);
+        }
+
+        if (!paused) {
           updateBiteParticles(dt);
           updateScorePopups(dt);
+          updateHeadFx(dt);
         }
 
         if (gameState === "playing" && !paused) {
