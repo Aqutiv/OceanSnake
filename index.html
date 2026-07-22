@@ -876,6 +876,15 @@
       const lerp = (start, end, amount) => start + (end - start) * amount;
       const unitFromAngle = (angle) => ({ x: Math.cos(angle), y: Math.sin(angle) });
       const nextBonusCountdown = () => Math.floor(rnd(BONUS_MIN_BITES, BONUS_MAX_BITES + 1));
+      const mulberry32 = (seed) => {
+        let state = seed >>> 0;
+        return () => {
+          state = (state + 0x6d2b79f5) | 0;
+          let t = Math.imul(state ^ (state >>> 15), 1 | state);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      };
 
       const hexToRgb = (hex) => {
         const value = hex.replace("#", "");
@@ -912,6 +921,8 @@
           accent: hexToRgb(theme.accent)
         };
       });
+      const MAGIC_FISH_MAIN = hexToRgb("#c9a7ff");
+      const MAGIC_FISH_ACCENT = hexToRgb("#7ee7ff");
       const readStoredFlag = (key) => {
         try {
           return localStorage.getItem(key) === "1";
@@ -1019,6 +1030,10 @@
       let bgFish;
       let nextFishSchoolAt;
       let shimmerAt;
+      let fishRunSeed;
+      let fishVariant;
+      let fishVariantKey;
+      let bonusFishVariant;
       let swallowBulges;
       let gulpAt;
       let squintUntil;
@@ -1085,6 +1100,10 @@
         nextFishSchoolAt = rnd(5, 12);
         shimmerAt = -10;
         arenaGradients = null;
+        fishRunSeed = Math.floor(rnd(1, 2 ** 31));
+        fishVariant = null;
+        fishVariantKey = null;
+        bonusFishVariant = null;
         createOcean();
         updateOceanFlow(true);
         score = 0;
@@ -4010,54 +4029,226 @@
         ctx.strokeRect(12, 12, ARENA.width - 24, ARENA.height - 24);
       }
 
+      function buildFishVariant(seed, regal = false) {
+        const random = mulberry32(seed);
+        const pick = (min, max) => lerp(min, max, random());
+        const pattern = regal ? 0 : Math.floor(random() * 4);
+        const patternSeeds = [random(), random(), random(), random(), random(), random()];
+        return {
+          bodyHeight: pick(0.66, 0.78),
+          forkDepth: regal ? 0.55 : pick(0.25, 0.55),
+          tailLobe: regal ? 1 : pick(0.6, 1),
+          dorsalHeight: regal ? 0.55 : pick(0.35, 0.55),
+          dorsalRake: pick(0.1, 0.4),
+          dorsalPos: pick(-0.1, 0.15),
+          pectoralSize: pick(0.28, 0.42),
+          scaleRows: 2 + Math.floor(random() * 3),
+          scaleStep: pick(0.3, 0.42),
+          pattern,
+          patternCount: 2 + Math.floor(random() * 3),
+          patternSeeds,
+          finAlpha: pick(0.5, 0.7),
+          wagRate: pick(5.5, 7.5),
+          wagPhase: pick(0, Math.PI * 2)
+        };
+      }
+
+      function currentFishVariant() {
+        if (!fishVariant || fishVariantKey !== foodLevel) {
+          fishVariantKey = foodLevel;
+          fishVariant = buildFishVariant((fishRunSeed + foodLevel * 7919) >>> 0);
+        }
+        return fishVariant;
+      }
+
+      function traceFishBody(radius, bodyH) {
+        ctx.beginPath();
+        ctx.moveTo(radius * 1.35, 0);
+        ctx.bezierCurveTo(radius * 0.95, -bodyH * 1.02, -radius * 0.15, -bodyH * 1.05, -radius * 0.78, -radius * 0.24);
+        ctx.quadraticCurveTo(-radius * 0.98, -radius * 0.1, -radius, 0);
+        ctx.quadraticCurveTo(-radius * 0.98, radius * 0.1, -radius * 0.78, radius * 0.24);
+        ctx.bezierCurveTo(-radius * 0.15, bodyH * 1.05, radius * 0.95, bodyH * 1.02, radius * 1.35, 0);
+        ctx.closePath();
+      }
+
+      function drawFishShape(radius, main, accent, variant, glowColor, glowBlur) {
+        const black = { r: 0, g: 0, b: 0 };
+        const white = { r: 255, g: 255, b: 255 };
+        const dorsalShade = mixRgb(main, black, 0.38);
+        const bellyShade = mixRgb(main, white, 0.35);
+        const bodyH = radius * variant.bodyHeight;
+        const finColor = rgbaStr(accent, variant.finAlpha);
+        const finRim = rgbaStr(mixRgb(accent, black, 0.3), 0.5);
+        const wag = Math.sin(pulse * variant.wagRate + variant.wagPhase) * 0.22;
+
+        ctx.save();
+        ctx.translate(-radius, 0);
+        ctx.rotate(wag);
+        const tailLen = radius * 0.9;
+        const lobe = radius * (0.55 + variant.tailLobe * 0.3);
+        const notch = tailLen * (1 - variant.forkDepth);
+        ctx.fillStyle = finColor;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(-tailLen * 0.45, -lobe * 0.25, -tailLen, -lobe);
+        ctx.quadraticCurveTo(-notch * 0.85, -lobe * 0.28, -notch, 0);
+        ctx.quadraticCurveTo(-notch * 0.85, lobe * 0.28, -tailLen, lobe);
+        ctx.quadraticCurveTo(-tailLen * 0.45, lobe * 0.25, 0, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = finRim;
+        ctx.lineWidth = Math.max(0.6, radius * 0.05);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = finColor;
+        for (const finX of [radius * 0.1, -radius * 0.45]) {
+          ctx.beginPath();
+          ctx.moveTo(finX, bodyH * 0.55);
+          ctx.quadraticCurveTo(finX - radius * 0.18, bodyH * 1.05, finX - radius * 0.34, bodyH * 0.7);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        const bodyGradient = ctx.createLinearGradient(0, -bodyH, 0, bodyH);
+        bodyGradient.addColorStop(0, rgbaStr(dorsalShade, 1));
+        bodyGradient.addColorStop(0.52, rgbaStr(main, 1));
+        bodyGradient.addColorStop(1, rgbaStr(bellyShade, 1));
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = glowBlur;
+        traceFishBody(radius, bodyH);
+        ctx.fillStyle = bodyGradient;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.save();
+        traceFishBody(radius, bodyH);
+        ctx.clip();
+        if (variant.pattern === 1) {
+          ctx.fillStyle = rgbaStr(dorsalShade, 0.35);
+          for (let b = 0; b < variant.patternCount; b += 1) {
+            const barX = lerp(-radius * 0.7, radius * 0.75, variant.patternSeeds[b]);
+            const barWidth = radius * (0.14 + variant.patternSeeds[5 - b] * 0.08);
+            ctx.fillRect(barX - barWidth / 2, -bodyH, barWidth, bodyH * 2);
+          }
+        } else if (variant.pattern === 2) {
+          ctx.fillStyle = rgbaStr(dorsalShade, 0.3);
+          ctx.fillRect(-radius, -bodyH * 0.18, radius * 2.35, bodyH * 0.42);
+        } else if (variant.pattern === 3) {
+          ctx.fillStyle = rgbaStr(dorsalShade, 0.4);
+          for (let s = 0; s < variant.patternCount + 2; s += 1) {
+            const speckX = lerp(-radius * 0.75, radius * 0.8, variant.patternSeeds[s % 6]);
+            const speckY = -bodyH * (0.15 + variant.patternSeeds[(s + 2) % 6] * 0.55);
+            ctx.beginPath();
+            ctx.arc(speckX, speckY, radius * (0.07 + variant.patternSeeds[(s + 4) % 6] * 0.05), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        ctx.strokeStyle = rgbaStr(mixRgb(main, black, 0.5), 0.22);
+        ctx.lineWidth = Math.max(0.5, radius * 0.045);
+        const scaleStep = radius * variant.scaleStep;
+        for (let row = 0; row < variant.scaleRows; row += 1) {
+          const rowY = -bodyH * 0.45 + row * bodyH * (0.9 / Math.max(1, variant.scaleRows - 1));
+          const rowOffset = row % 2 === 0 ? 0 : scaleStep * 0.5;
+          for (let scaleX = -radius * 0.7 + rowOffset; scaleX < radius * 0.9; scaleX += scaleStep) {
+            ctx.beginPath();
+            ctx.arc(scaleX, rowY, scaleStep * 0.42, Math.PI * 0.15, Math.PI * 0.85);
+            ctx.stroke();
+          }
+        }
+
+        ctx.strokeStyle = rgbaStr(dorsalShade, 0.45);
+        ctx.lineWidth = Math.max(0.7, radius * 0.06);
+        ctx.beginPath();
+        ctx.arc(radius * 0.98, 0, radius * 0.52, Math.PI * 0.6, Math.PI * 1.4);
+        ctx.stroke();
+        ctx.strokeStyle = rgbaStr(dorsalShade, 0.2);
+        ctx.beginPath();
+        ctx.arc(radius * 1.06, 0, radius * 0.6, Math.PI * 0.68, Math.PI * 1.32);
+        ctx.stroke();
+
+        ctx.strokeStyle = rgbaStr(mixRgb(main, black, 0.45), 0.16);
+        ctx.lineWidth = Math.max(0.5, radius * 0.04);
+        ctx.beginPath();
+        ctx.moveTo(radius * 0.55, -radius * 0.05);
+        ctx.quadraticCurveTo(-radius * 0.1, radius * 0.06, -radius * 0.9, -radius * 0.02);
+        ctx.stroke();
+        ctx.restore();
+
+        const dorsalBase = radius * (0.15 + variant.dorsalPos);
+        const dorsalTip = bodyH * (1 + variant.dorsalHeight);
+        ctx.fillStyle = finColor;
+        ctx.beginPath();
+        ctx.moveTo(dorsalBase + radius * 0.42, -bodyH * 0.82);
+        ctx.quadraticCurveTo(
+          dorsalBase - radius * variant.dorsalRake,
+          -dorsalTip,
+          dorsalBase - radius * (0.5 + variant.dorsalRake),
+          -bodyH * 0.7
+        );
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = finRim;
+        ctx.lineWidth = Math.max(0.5, radius * 0.04);
+        ctx.beginPath();
+        ctx.moveTo(dorsalBase + radius * 0.1, -bodyH * 0.85);
+        ctx.lineTo(dorsalBase - radius * variant.dorsalRake * 0.6, -dorsalTip * 0.9);
+        ctx.moveTo(dorsalBase - radius * 0.2, -bodyH * 0.8);
+        ctx.lineTo(dorsalBase - radius * (0.3 + variant.dorsalRake * 0.8), -dorsalTip * 0.82);
+        ctx.stroke();
+
+        const pectoralFlutter = Math.sin(pulse * variant.wagRate * 1.3 + variant.wagPhase) * 0.15;
+        ctx.save();
+        ctx.translate(radius * 0.35, bodyH * 0.25);
+        ctx.rotate(0.5 + pectoralFlutter);
+        ctx.fillStyle = finColor;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(
+          -radius * 0.1,
+          radius * variant.pectoralSize,
+          -radius * variant.pectoralSize * 1.4,
+          radius * variant.pectoralSize * 0.9
+        );
+        ctx.quadraticCurveTo(-radius * 0.25, radius * variant.pectoralSize * 0.3, 0, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        ctx.fillStyle = rgbaStr(bellyShade, 0.95);
+        ctx.beginPath();
+        ctx.arc(radius * 0.72, -radius * 0.16, radius * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = rgbaStr(mixRgb(main, black, 0.55), 0.8);
+        ctx.lineWidth = Math.max(0.5, radius * 0.035);
+        ctx.stroke();
+        ctx.fillStyle = "#03131f";
+        ctx.beginPath();
+        ctx.arc(radius * 0.74, -radius * 0.16, radius * 0.09, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+        ctx.beginPath();
+        ctx.arc(radius * 0.7, -radius * 0.2, Math.max(0.5, radius * 0.035), 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = rgbaStr(mixRgb(main, black, 0.5), 0.55);
+        ctx.lineWidth = Math.max(0.6, radius * 0.045);
+        ctx.beginPath();
+        ctx.moveTo(radius * 1.32, radius * 0.05);
+        ctx.quadraticCurveTo(radius * 1.16, radius * 0.1, radius * 1.05, radius * 0.08);
+        ctx.stroke();
+      }
+
       function drawFood() {
-        const scale = snakeScale();
-        const radius = foodRadius() + Math.sin(pulse * 4) * 1.2 * scale;
+        const radius = foodRadius() + Math.sin(pulse * 4) * 1.2 * snakeScale();
         const theme = currentFoodTheme();
+        const pal = ARENA_PALETTES[foodLevel % ARENA_PALETTES.length];
         const angle = Math.atan2(foodVelocity.y, foodVelocity.x);
         ctx.save();
         ctx.translate(food.x, food.y);
         ctx.rotate(angle);
-        ctx.shadowColor = theme.glow;
-        ctx.shadowBlur = 22;
-        ctx.fillStyle = theme.main;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, radius * 1.25, radius * 0.72, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        ctx.fillStyle = theme.accent;
-        ctx.beginPath();
-        ctx.moveTo(-radius * 1.05, 0);
-        ctx.lineTo(-radius * 1.85, -radius * 0.7);
-        ctx.lineTo(-radius * 1.72, 0);
-        ctx.lineTo(-radius * 1.85, radius * 0.7);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
-        ctx.beginPath();
-        ctx.ellipse(-radius * 0.15, -radius * 0.12, radius * 0.45, radius * 0.18, -0.35, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = theme.accent;
-        ctx.beginPath();
-        ctx.moveTo(-radius * 0.15, -radius * 0.66);
-        ctx.lineTo(radius * 0.38, -radius * 1.16);
-        ctx.lineTo(radius * 0.15, -radius * 0.48);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.fillStyle = "#03131f";
-        ctx.beginPath();
-        ctx.arc(radius * 0.66, -radius * 0.22, radius * 0.13, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = "rgba(3, 19, 31, 0.28)";
-        ctx.lineWidth = Math.max(0.7, 1.2 * scale);
-        ctx.beginPath();
-        ctx.arc(radius * 0.9, 0, radius * 0.28, -0.78, 0.78);
-        ctx.stroke();
+        drawFishShape(radius, pal.glow, pal.accent, currentFishVariant(), theme.glow, 22);
         ctx.restore();
       }
 
@@ -4081,19 +4272,10 @@
         ctx.arc(0, 0, radius * 2.8, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = "#c9a7ff";
-        ctx.beginPath();
-        ctx.ellipse(0, 0, radius * 1.35, radius * 0.72, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = "#7ee7ff";
-        ctx.beginPath();
-        ctx.moveTo(-radius * 1.02, 0);
-        ctx.lineTo(-radius * 2.05, -radius * 0.82);
-        ctx.lineTo(-radius * 1.72, 0);
-        ctx.lineTo(-radius * 2.05, radius * 0.82);
-        ctx.closePath();
-        ctx.fill();
+        if (!bonusFishVariant) {
+          bonusFishVariant = buildFishVariant((fishRunSeed ^ 0x5eed) >>> 0, true);
+        }
+        drawFishShape(radius, MAGIC_FISH_MAIN, MAGIC_FISH_ACCENT, bonusFishVariant, "rgba(201, 167, 255, 0.95)", 28);
 
         ctx.strokeStyle = "rgba(247, 251, 255, 0.75)";
         ctx.lineWidth = Math.max(0.8, 1.4 * scale);
@@ -4103,16 +4285,6 @@
           ctx.quadraticCurveTo(radius * 0.12, i * radius * 0.44, radius * 0.62, i * radius * 0.18);
           ctx.stroke();
         }
-
-        ctx.fillStyle = "#03131f";
-        ctx.beginPath();
-        ctx.arc(radius * 0.68, -radius * 0.22, radius * 0.13, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = "rgba(247, 251, 255, 0.9)";
-        ctx.beginPath();
-        ctx.arc(radius * 0.71, -radius * 0.25, radius * 0.045, 0, Math.PI * 2);
-        ctx.fill();
         ctx.restore();
       }
 
