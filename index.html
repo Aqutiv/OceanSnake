@@ -4282,6 +4282,41 @@
           ctx.arc(part.x, part.y, radius, 0, Math.PI * 2);
           ctx.fill();
 
+          if (i % 3 === 1 || i % 7 === 3) {
+            const spotSeed = i * 53 + 11;
+            ctx.fillStyle = `hsl(${hueMix + 14} ${Math.round(66 - grayMix * 58)}% ${Math.round(22 - grayMix * 2)}%)`;
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath();
+            if (i % 3 === 1) {
+              const spotAngle = ((spotSeed % 7) / 7) * Math.PI * 2;
+              ctx.arc(
+                part.x + Math.cos(spotAngle) * radius * 0.3,
+                part.y + Math.sin(spotAngle) * radius * 0.3,
+                radius * (0.32 + (spotSeed % 3) * 0.08),
+                0,
+                Math.PI * 2
+              );
+            }
+            if (i % 7 === 3) {
+              const smallAngle = ((spotSeed % 5) / 5) * Math.PI * 2;
+              ctx.arc(
+                part.x + Math.cos(smallAngle) * radius * 0.42,
+                part.y + Math.sin(smallAngle) * radius * 0.42,
+                radius * 0.2,
+                0,
+                Math.PI * 2
+              );
+            }
+            ctx.fill();
+            ctx.globalAlpha = 1;
+          }
+
+          ctx.strokeStyle = `rgba(214, 244, 228, ${0.1 * (1 - grayMix)})`;
+          ctx.lineWidth = Math.max(1, radius * 0.3);
+          ctx.beginPath();
+          ctx.arc(part.x, part.y, radius * 0.78, Math.PI * 0.35, Math.PI * 0.95);
+          ctx.stroke();
+
           ctx.fillStyle = `rgba(255, 255, 255, ${0.12 * (1 - grayMix)})`;
           ctx.beginPath();
           ctx.arc(part.x - radius * 0.28, part.y - radius * 0.32, Math.max(1.5, radius * 0.18), 0, Math.PI * 2);
