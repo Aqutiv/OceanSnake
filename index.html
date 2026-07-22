@@ -761,6 +761,10 @@
       const BG_FISH_SPEED_MAX = 60;
       const SHIMMER_DURATION = 1.2;
       const SHIMMER_MAX_ALPHA = 0.16;
+      const WALL_SHADOW_DEPTH = 26;
+      const AQUARIUM_BUBBLE_COUNT = 8;
+      const AQUARIUM_BUBBLE_COUNT_MOBILE = 5;
+      const GLASS_STREAK_ALPHAS = [0.04, 0.025];
       const BITE_BURST_PARTICLES = 18;
       const BITE_BURST_LIFE = 0.62;
       const SCORE_POPUP_LIFE = 0.9;
@@ -780,6 +784,7 @@
       const BONUS_SPEED_MULTIPLIER = 2;
       const BONUS_WALL_AVOID_DISTANCE = 130;
       const INVINCIBLE_BITE_LIMIT = 5;
+      const INVINCIBLE_DURATION_MS = 30000;
       const INVINCIBLE_ENDING_WARNING_MS = 2000;
       const TOUCH_HEAD_GRAB_RADIUS = 68;
       const BACKGROUND_MUSIC_URL = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Floating%20Cities.mp3";
@@ -838,8 +843,8 @@
       const BUILD_NUMBER = 19;
       const BUILD_DATE = "20260717.0003";
       const INTRO_TITLE = "How to Play";
-      const DESKTOP_INTRO_COPY = "Steer by dragging, with WASD or the arrow keys, or with a controller.\nDualSense: Cross starts, Options pauses, Square restarts, and Triangle toggles haptics; enable its touchpad for relative drag steering.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
-      const MOBILE_INTRO_COPY = "Steer with the joystick, by dragging in the arena, or with a connected controller.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for 5 bites or until the next color and appear every 10-20 bites.";
+      const DESKTOP_INTRO_COPY = "Steer by dragging, with WASD or the arrow keys, or with a controller.\nDualSense: Cross starts, Options pauses, Square restarts, and Triangle toggles haptics; enable its touchpad for relative drag steering.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for a spree of bites or up to 30 seconds and appear every 10-20 bites.";
+      const MOBILE_INTRO_COPY = "Steer with the joystick, by dragging in the arena, or with a connected controller.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for a spree of bites or up to 30 seconds and appear every 10-20 bites.";
       const FOOD_THEMES = [
         { main: "#ffcf5a", accent: "#ff7a59", glow: "rgba(255, 207, 90, 0.72)" },
         { main: "#7ee7ff", accent: "#35d6b4", glow: "rgba(126, 231, 255, 0.72)" },
@@ -948,6 +953,7 @@
       let invincibleBitesRemaining;
       let pendingInvincibleBites;
       let invincibleWarningUntil;
+      let invincibleUntil;
       let biteSelfGraceDistance;
       let headMotion;
       let foodLevel;
@@ -1073,6 +1079,7 @@
         invincibleBitesRemaining = 0;
         pendingInvincibleBites = 0;
         invincibleWarningUntil = 0;
+        invincibleUntil = 0;
         biteSelfGraceDistance = 0;
         if (currentMusicTrack || musicStarted) {
           switchMusic("normal");
@@ -3198,10 +3205,15 @@
         return bonusAngle;
       }
 
+      function invincibleBiteLimit() {
+        return Math.max(INVINCIBLE_BITE_LIMIT, Math.floor(currentFoodQuota() / 2));
+      }
+
       function grantInvincibility() {
         resetCombo();
         invincibleWarningUntil = 0;
-        invincibleBitesRemaining = INVINCIBLE_BITE_LIMIT;
+        invincibleBitesRemaining = invincibleBiteLimit();
+        invincibleUntil = performance.now() + INVINCIBLE_DURATION_MS;
         pendingInvincibleBites = 0;
         switchMusic("invincible");
         setStatus(`Invincible ${invincibleBitesRemaining}`, "#c9a7ff");
@@ -3306,6 +3318,7 @@
         if (isInvincibilityWarningActive()) return;
         invincibleBitesRemaining = 0;
         pendingInvincibleBites = 0;
+        invincibleUntil = 0;
         invincibleWarningUntil = performance.now() + INVINCIBLE_ENDING_WARNING_MS;
         playInvincibilityEndingCue();
         playHaptic("warning");
@@ -3330,6 +3343,7 @@
         invincibleWarningUntil = 0;
         invincibleBitesRemaining = 0;
         pendingInvincibleBites = 0;
+        invincibleUntil = 0;
         if (musicTracks && musicTracks.invincible) {
           musicTracks.invincible.playbackRate = 1;
         }
@@ -3339,6 +3353,9 @@
       }
 
       function updateInvincibilityWarning() {
+        if (invincibleUntil && invincibleBitesRemaining > 0 && performance.now() >= invincibleUntil) {
+          startInvincibilityWarning();
+        }
         if (!invincibleWarningUntil) return;
         if (isInvincibilityWarningActive()) {
           updateWarningMusicEffect();
@@ -3389,9 +3406,6 @@
           resetCombo();
           if (bonusFood) {
             clearBonusFood();
-          }
-          if (wasInvincible) {
-            pendingInvincibleBites = invincibleBitesRemaining;
           }
         }
         placeFood();
@@ -3466,6 +3480,7 @@
         invincibleBitesRemaining = 0;
         pendingInvincibleBites = 0;
         invincibleWarningUntil = 0;
+        invincibleUntil = 0;
         best = Math.max(best, score);
         localStorage.setItem(BEST_SCORE_STORAGE_KEY, String(best));
         bestEl.textContent = best;
@@ -3795,7 +3810,21 @@
         );
         vignette.addColorStop(0, "rgba(1, 6, 12, 0)");
         vignette.addColorStop(1, `rgba(1, 6, 12, ${VIGNETTE_ALPHA})`);
-        arenaGradients = { key, bg, glow, rayCyan, rayGlow, fog, vignette };
+        const wallShade = "rgba(1, 8, 14, 0.38)";
+        const wallClear = "rgba(1, 8, 14, 0)";
+        const wallTop = ctx.createLinearGradient(0, 0, 0, WALL_SHADOW_DEPTH);
+        wallTop.addColorStop(0, wallShade);
+        wallTop.addColorStop(1, wallClear);
+        const wallBottom = ctx.createLinearGradient(0, height, 0, height - WALL_SHADOW_DEPTH);
+        wallBottom.addColorStop(0, wallShade);
+        wallBottom.addColorStop(1, wallClear);
+        const wallLeft = ctx.createLinearGradient(0, 0, WALL_SHADOW_DEPTH, 0);
+        wallLeft.addColorStop(0, wallShade);
+        wallLeft.addColorStop(1, wallClear);
+        const wallRight = ctx.createLinearGradient(width, 0, width - WALL_SHADOW_DEPTH, 0);
+        wallRight.addColorStop(0, wallShade);
+        wallRight.addColorStop(1, wallClear);
+        arenaGradients = { key, bg, glow, rayCyan, rayGlow, fog, vignette, wallTop, wallBottom, wallLeft, wallRight };
         arenaPaletteDirty = false;
       }
 
@@ -3979,6 +4008,26 @@
           ctx.arc(particle.x, particle.y, particle.r, 0, Math.PI * 2);
           ctx.fill();
         });
+
+        const bubbleCount = mobile ? AQUARIUM_BUBBLE_COUNT_MOBILE : AQUARIUM_BUBBLE_COUNT;
+        const bubblerX = ARENA.width * 0.955;
+        ctx.strokeStyle = "rgba(226, 251, 255, 0.82)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < bubbleCount; i += 1) {
+          const cycle = ARENA.height * 0.88;
+          const bubbleY = ARENA.height * 0.94 - ((pulse * 46 + i * ARENA.height * 0.115) % cycle);
+          const bubbleX = bubblerX + Math.sin(pulse * 2 + i * 1.7) * 6;
+          const bubbleR = Math.max(1, (1.4 + (i % 3) * 0.8) * snakeScale());
+          ctx.globalAlpha = 0.35 * clamp(bubbleY / ARENA.height, 0, 1);
+          ctx.beginPath();
+          ctx.arc(bubbleX, bubbleY, bubbleR, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = "rgba(180, 210, 224, 0.6)";
+        ctx.beginPath();
+        ctx.arc(bubblerX, ARENA.height * 0.955, Math.max(2, 3 * snakeScale()), 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
 
         ctx.strokeStyle = "rgba(126, 231, 255, 0.06)";
@@ -3999,6 +4048,15 @@
         ctx.fillStyle = arenaGradients.fog;
         ctx.fillRect(0, ARENA.height * FOG_TOP_FRACTION, ARENA.width, ARENA.height * (1 - FOG_TOP_FRACTION));
         ctx.restore();
+
+        ctx.fillStyle = arenaGradients.wallTop;
+        ctx.fillRect(0, 0, ARENA.width, WALL_SHADOW_DEPTH);
+        ctx.fillStyle = arenaGradients.wallBottom;
+        ctx.fillRect(0, ARENA.height - WALL_SHADOW_DEPTH, ARENA.width, WALL_SHADOW_DEPTH);
+        ctx.fillStyle = arenaGradients.wallLeft;
+        ctx.fillRect(0, 0, WALL_SHADOW_DEPTH, ARENA.height);
+        ctx.fillStyle = arenaGradients.wallRight;
+        ctx.fillRect(ARENA.width - WALL_SHADOW_DEPTH, 0, WALL_SHADOW_DEPTH, ARENA.height);
 
         const shimmerT = (pulse - shimmerAt) / SHIMMER_DURATION;
         if (shimmerT >= 0 && shimmerT <= 1) {
@@ -4024,9 +4082,29 @@
         ctx.fillStyle = arenaGradients.vignette;
         ctx.fillRect(0, 0, ARENA.width, ARENA.height);
 
+        ctx.strokeStyle = "rgba(2, 10, 18, 0.9)";
+        ctx.lineWidth = 6;
+        ctx.strokeRect(8, 8, ARENA.width - 16, ARENA.height - 16);
         ctx.strokeStyle = rgbaStr(pal.glow, 0.72);
         ctx.lineWidth = 4;
         ctx.strokeRect(12, 12, ARENA.width - 24, ARENA.height - 24);
+        ctx.strokeStyle = "rgba(226, 251, 255, 0.22)";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(15, 15, ARENA.width - 30, ARENA.height - 30);
+
+        ctx.strokeStyle = "rgba(190, 230, 255, 0.1)";
+        ctx.lineWidth = 2;
+        const seam = 40;
+        ctx.beginPath();
+        ctx.moveTo(15, 15);
+        ctx.lineTo(15 + seam, 15 + seam);
+        ctx.moveTo(ARENA.width - 15, 15);
+        ctx.lineTo(ARENA.width - 15 - seam, 15 + seam);
+        ctx.moveTo(15, ARENA.height - 15);
+        ctx.lineTo(15 + seam, ARENA.height - 15 - seam);
+        ctx.moveTo(ARENA.width - 15, ARENA.height - 15);
+        ctx.lineTo(ARENA.width - 15 - seam, ARENA.height - 15 - seam);
+        ctx.stroke();
       }
 
       function buildFishVariant(seed, regal = false) {
@@ -4791,6 +4869,28 @@
         ctx.restore();
       }
 
+      function drawGlassReflections() {
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = "rgba(226, 251, 255, 1)";
+        const slant = ARENA.width * 0.12;
+        const anchors = [0.18, 0.55];
+        const widths = [0.07, 0.035];
+        for (let i = 0; i < anchors.length; i += 1) {
+          const streakX = ARENA.width * anchors[i];
+          const streakW = ARENA.width * widths[i];
+          ctx.globalAlpha = GLASS_STREAK_ALPHAS[i];
+          ctx.beginPath();
+          ctx.moveTo(streakX, 0);
+          ctx.lineTo(streakX + streakW, 0);
+          ctx.lineTo(streakX + streakW + slant, ARENA.height);
+          ctx.lineTo(streakX + slant, ARENA.height);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
       function drawDeathFlash(deadTime) {
         if (!(deadTime < DEATH_FLASH_DURATION)) return;
         const fade = 1 - deadTime / DEATH_FLASH_DURATION;
@@ -4822,6 +4922,7 @@
         if (shaken) {
           ctx.restore();
         }
+        drawGlassReflections();
         drawDeathFlash(deadTime);
       }
 
@@ -4850,6 +4951,7 @@
           const pausedFor = pauseStartedAt ? Math.max(0, now - pauseStartedAt) : 0;
           if (comboExpiresAt > 0) comboExpiresAt += pausedFor;
           if (invincibleWarningUntil > 0) invincibleWarningUntil += pausedFor;
+          if (invincibleUntil > 0) invincibleUntil += pausedFor;
           pauseStartedAt = 0;
           lastFrame = now;
           frameDeltaSeconds = 0;
