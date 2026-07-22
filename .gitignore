@@ -9,3 +9,4 @@ node_modules/
 .wrangler/
 public/game/
 debug.log
+.claude/
