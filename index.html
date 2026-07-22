@@ -9,14 +9,21 @@
   <meta name="apple-mobile-web-app-title" content="Ocean Snake">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/ocean-snake-logo.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;800&display=swap">
   <title>Ocean Snake</title>
   <style>
     :root {
       color-scheme: dark;
-      --ink: #f7fbff;
+      --ink: #eaf6ff;
       --muted: #9fb0c5;
-      --panel: rgba(5, 22, 34, 0.82);
-      --line: rgba(255, 255, 255, 0.14);
+      --panel: rgba(6, 20, 32, 0.72);
+      --line: rgba(126, 231, 255, 0.25);
+      --line-soft: rgba(255, 255, 255, 0.10);
+      --glow: rgba(126, 231, 255, 0.12);
+      --radius-card: 14px;
+      --radius-chip: 12px;
       --danger: #ff5f6d;
       --food: #ffcf5a;
       --snake: #35d6b4;
@@ -41,7 +48,7 @@
         radial-gradient(circle at 82% 18%, rgba(53, 214, 180, 0.12), transparent 27%),
         linear-gradient(160deg, #02101b 0%, #05304b 48%, #020812 100%);
       color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: Sora, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
       user-select: none;
       overscroll-behavior: none;
@@ -88,10 +95,14 @@
       margin: 0;
       font-size: clamp(1.35rem, 3.2vw, 2.6rem);
       line-height: 1;
-      font-weight: 850;
-      letter-spacing: 0;
+      font-weight: 800;
+      letter-spacing: 0.02em;
       white-space: nowrap;
       text-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+    }
+
+    h1 .brand-accent {
+      color: var(--accent);
     }
 
     .stats {
@@ -105,10 +116,12 @@
     .stat,
     .status,
     .icon-button {
-      border: 1px solid var(--line);
+      border: 1px solid var(--line-soft);
       background: var(--panel);
       backdrop-filter: blur(18px);
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 10px 30px rgba(0, 0, 0, 0.35);
     }
 
     .stat {
@@ -116,17 +129,22 @@
       height: 44px;
       display: grid;
       place-items: center;
-      padding: 4px 12px;
-      border-radius: 8px;
+      padding: 4px 14px;
+      border-radius: var(--radius-chip);
+    }
+
+    .stat--score {
+      border-color: rgba(126, 231, 255, 0.3);
     }
 
     .stat span {
       display: block;
       color: var(--muted);
-      font-size: 0.68rem;
+      font-size: 0.63rem;
       line-height: 1;
       text-transform: uppercase;
-      font-weight: 800;
+      letter-spacing: 0.14em;
+      font-weight: 600;
     }
 
     .stat strong {
@@ -134,7 +152,12 @@
       color: var(--ink);
       font-size: 1.2rem;
       line-height: 1.15;
-      font-weight: 850;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat--best strong {
+      color: var(--food);
     }
 
     .arena-wrap {
@@ -151,10 +174,12 @@
       max-width: 1180px;
       max-height: 760px;
       aspect-ratio: 1.45 / 1;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-card);
       background: var(--arena-a);
-      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.36);
+      box-shadow:
+        0 0 40px var(--glow),
+        0 28px 90px rgba(0, 0, 0, 0.4);
       touch-action: none;
       cursor: grab;
     }
@@ -172,17 +197,33 @@
       padding: 24px;
       text-align: center;
       z-index: 1;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.28s ease, visibility 0s linear 0.28s;
+    }
+
+    .center-state.visible {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.28s ease;
     }
 
     .state-badge {
       width: min(460px, 82vw);
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      border-radius: 8px;
-      background: rgba(7, 13, 22, 0.72);
-      backdrop-filter: blur(16px);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(5, 16, 26, 0.78);
+      backdrop-filter: blur(20px);
       padding: 18px 18px 16px;
-      box-shadow: 0 18px 54px rgba(0, 0, 0, 0.28);
-      transform: translateY(-2px);
+      box-shadow:
+        0 0 40px var(--glow),
+        0 24px 60px rgba(0, 0, 0, 0.45);
+      transform: scale(0.94) translateY(8px);
+      transition: transform 0.32s cubic-bezier(0.22, 0.9, 0.3, 1);
+    }
+
+    .center-state.visible .state-badge {
+      transform: scale(1) translateY(0);
     }
 
     .state-icon {
@@ -201,13 +242,56 @@
       width: 31px;
       height: 31px;
       stroke-width: 2.4;
+      display: none;
+    }
+
+    .center-state .icon-play {
+      display: block;
+    }
+
+    .center-state.state-pause .icon-play,
+    .center-state.state-gameover .icon-play {
+      display: none;
+    }
+
+    .center-state.state-pause .icon-pause {
+      display: block;
+    }
+
+    .center-state.state-gameover .icon-over {
+      display: block;
+    }
+
+    .center-state.state-pause .state-badge {
+      border-color: rgba(126, 231, 255, 0.45);
+    }
+
+    .center-state.state-pause .state-icon {
+      background: var(--accent);
+      box-shadow: 0 0 0 8px rgba(126, 231, 255, 0.13);
+    }
+
+    .center-state.state-gameover .state-badge {
+      border-color: rgba(255, 95, 109, 0.5);
+      background: rgba(30, 8, 14, 0.8);
+      box-shadow:
+        0 0 40px rgba(255, 95, 109, 0.12),
+        0 24px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    .center-state.state-gameover .state-icon {
+      background: var(--danger);
+      box-shadow: 0 0 0 8px rgba(255, 95, 109, 0.14);
+      color: #2a060c;
     }
 
     .state-badge h2 {
       margin: 0;
       font-size: clamp(1.25rem, 4vw, 2rem);
       line-height: 1.1;
-      letter-spacing: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 800;
     }
 
     .state-badge p {
@@ -218,19 +302,68 @@
       white-space: pre-line;
     }
 
+    .state-score {
+      display: none;
+    }
+
+    .center-state.state-gameover .state-score {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .state-score .pill {
+      border: 1px solid rgba(126, 231, 255, 0.3);
+      border-radius: var(--radius-chip);
+      background: var(--panel);
+      padding: 7px 16px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+    }
+
+    .state-score .pill strong {
+      color: var(--ink);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      margin-left: 6px;
+    }
+
+    .state-score .pill.best {
+      border-color: rgba(255, 207, 90, 0.35);
+    }
+
+    .state-score .pill.best strong {
+      color: var(--food);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .center-state,
+      .state-badge {
+        transition: none;
+      }
+
+      .dot {
+        animation: none;
+      }
+    }
+
     .bottombar {
       min-height: 44px;
     }
 
     .status {
       min-height: 40px;
-      border-radius: 8px;
+      border-radius: var(--radius-chip);
       display: flex;
       align-items: center;
       gap: 8px;
       padding: 8px 12px;
       color: var(--muted);
-      font-weight: 750;
+      font-weight: 600;
       font-size: 0.9rem;
       line-height: 1.2;
       min-width: 0;
@@ -243,6 +376,12 @@
       background: var(--snake);
       box-shadow: 0 0 12px rgba(49, 208, 170, 0.8);
       flex: 0 0 auto;
+      animation: dot-breathe 2.6s ease-in-out infinite;
+    }
+
+    @keyframes dot-breathe {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
     }
 
     #statusText {
@@ -268,19 +407,24 @@
       }
 
     .icon-button {
-      width: 42px;
-      height: 42px;
-      border-radius: 8px;
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-chip);
       color: var(--ink);
       display: grid;
       place-items: center;
       padding: 0;
       cursor: pointer;
+      transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
     }
 
     .icon-button:hover {
-      border-color: rgba(139, 211, 255, 0.52);
+      border-color: var(--line);
       color: var(--accent);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 0 14px var(--glow),
+        0 10px 30px rgba(0, 0, 0, 0.35);
     }
 
     .icon-button:active {
@@ -445,7 +589,7 @@
         width: 104px;
         height: 104px;
         border-radius: 50%;
-        border: 1px solid rgba(126, 231, 255, 0.28);
+        border: 1px solid var(--line);
         background:
           radial-gradient(circle at 50% 50%, rgba(255, 207, 90, var(--joy-glow-alpha)), transparent 31%),
           radial-gradient(circle at 50% 50%, rgba(126, 231, 255, 0.14), transparent 42%),
@@ -602,14 +746,14 @@
     <header class="topbar">
       <div class="brand" aria-label="Ocean Snake">
         <img class="brand-logo" src="assets/ocean-snake-logo-header.png" alt="" width="512" height="512" aria-hidden="true">
-        <h1>Ocean Snake</h1>
+        <h1>Ocean <span class="brand-accent">Snake</span></h1>
       </div>
       <div class="stats" aria-live="polite">
-        <div class="stat" aria-label="Score">
+        <div class="stat stat--score" aria-label="Score">
           <span>Score</span>
           <strong id="score">0</strong>
         </div>
-        <div class="stat" aria-label="Best score">
+        <div class="stat stat--best" aria-label="Best score">
           <span>Best</span>
           <strong id="best">0</strong>
         </div>
@@ -621,12 +765,26 @@
       <div class="center-state" id="centerState">
         <div class="state-badge">
           <div class="state-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 3l14 8-6 2-2 6L5 3z"></path>
+            </svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 5v14"></path>
+              <path d="M15 5v14"></path>
+            </svg>
+            <svg class="icon-over" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M8.5 9.5l2 2m0-2l-2 2"></path>
+              <path d="M13.5 9.5l2 2m0-2l-2 2"></path>
+              <path d="M8.5 15.5c1-1 2.2-1.5 3.5-1.5s2.5.5 3.5 1.5"></path>
             </svg>
           </div>
           <h2 id="stateTitle">Ready</h2>
           <p id="stateCopy">The first bite is waiting.</p>
+          <div class="state-score" aria-hidden="true">
+            <span class="pill">Score<strong id="finalScore">0</strong></span>
+            <span class="pill best">Best<strong id="finalBest">0</strong></span>
+          </div>
         </div>
       </div>
     </section>
@@ -687,6 +845,8 @@
       const centerState = document.getElementById("centerState");
       const stateTitle = document.getElementById("stateTitle");
       const stateCopy = document.getElementById("stateCopy");
+      const finalScoreEl = document.getElementById("finalScore");
+      const finalBestEl = document.getElementById("finalBest");
       const statusText = document.getElementById("statusText");
       const statusDot = document.getElementById("statusDot");
       const pauseBtn = document.getElementById("pauseBtn");
@@ -1130,19 +1290,31 @@
         updatePauseIcon();
         placeFood();
         if (!introShown) {
-          setOverlay(INTRO_TITLE, introCopy());
+          setOverlay("intro", INTRO_TITLE, introCopy());
           introShown = true;
           writeStoredFlag(INTRO_SEEN_STORAGE_KEY, true);
         } else {
-          setOverlay("Ready", "The first bite is waiting.");
+          setOverlay("ready", "Ready", "The first bite is waiting.");
         }
         setStatus("Ready", "#31d0aa");
       }
 
-      function setOverlay(title, copy) {
+      const OVERLAY_STATE_CLASSES = ["state-intro", "state-ready", "state-pause", "state-gameover"];
+
+      function setOverlay(state, title, copy) {
+        if (!state) {
+          // Keep the last state class so the fade-out retains its tint.
+          centerState.classList.remove("visible");
+          return;
+        }
         stateTitle.textContent = title;
         stateCopy.textContent = copy;
-        centerState.style.display = title ? "grid" : "none";
+        centerState.classList.remove(...OVERLAY_STATE_CLASSES);
+        centerState.classList.add(`state-${state}`, "visible");
+        if (state === "gameover") {
+          finalScoreEl.textContent = score;
+          finalBestEl.textContent = best;
+        }
       }
 
       function setStatus(copy, color) {
@@ -2865,7 +3037,7 @@
 
         if (gameState === "ready") {
           gameState = "playing";
-          setOverlay("", "");
+          setOverlay(null);
           beep(360, 0.04, "triangle", 0.045);
         }
         startMusic();
@@ -3484,7 +3656,7 @@
         best = Math.max(best, score);
         localStorage.setItem(BEST_SCORE_STORAGE_KEY, String(best));
         bestEl.textContent = best;
-        setOverlay("Game Over", `Score ${score} / Best ${best}`);
+        setOverlay("gameover", "Game Over", "The reef reclaims another hunter.");
         setStatus("Collision", "#ff5f6d");
         stopMusic();
         playHaptic("collision");
@@ -4852,7 +5024,7 @@
         ctx.save();
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.font = `700 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
+        ctx.font = `600 ${fontSize}px Sora, ui-sans-serif, system-ui, sans-serif`;
         scorePopups.forEach((popup) => {
           const progress = popup.age / popup.life;
           const fadeIn = Math.min(1, progress / 0.12);
@@ -4941,10 +5113,10 @@
           stopHaptics();
           suspendGameAudio();
           if (reason === "lifecycle") {
-            setOverlay("Paused", "The game moved into the background. Resume when you're ready.");
+            setOverlay("pause", "Paused", "The game moved into the background. Resume when you're ready.");
             setStatus("Paused in background", "#8bd3ff");
           } else {
-            setOverlay("Paused", "The arena is holding its breath.");
+            setOverlay("pause", "Paused", "The arena is holding its breath.");
             setStatus("Paused", "#8bd3ff");
           }
         } else {
@@ -4955,7 +5127,7 @@
           pauseStartedAt = 0;
           lastFrame = now;
           frameDeltaSeconds = 0;
-          setOverlay("", "");
+          setOverlay(null);
           setStatus(gameState === "ready" ? "Ready" : "Hunting", "#31d0aa");
           resumeGameAudio();
         }
