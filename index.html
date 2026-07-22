@@ -787,6 +787,9 @@
       const INVINCIBLE_MUSIC_URL = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Voxel%20Revolution.mp3";
       const INVINCIBLE_MUSIC_CREDIT = "Voxel Revolution by Kevin MacLeod (incompetech.com), licensed CC BY 4.0";
       const INVINCIBLE_MUSIC_FADE_SECONDS = 0.85;
+      const NORMAL_MUSIC_FADE_SECONDS = 1.6;
+      const WARNING_MUSIC_DUCK_FACTOR = 0.25;
+      const WARNING_MUSIC_MIN_RATE = 0.82;
       const AMBIENT_FALLBACK_VOLUME = 0.05;
       const MUSIC_STALL_TIMEOUT_MS = 5000;
       const BEST_SCORE_STORAGE_KEY = "oceanSnakeBest";
@@ -1410,15 +1413,17 @@
 
       function switchMusic(mode) {
         if (musicMode === mode) return;
+        const fromInvincible = musicMode === "invincible";
         const canPlay = musicStarted && !muted && !paused && !document.hidden;
-        const fadeIn = mode === "invincible" && canPlay;
+        const fadeIn = canPlay && (mode === "invincible" || fromInvincible);
         const config = musicConfig(mode);
         ensureMusicTrack(mode, fadeIn);
+        currentMusicTrack.playbackRate = 1;
         if (canPlay) {
           currentMusicTrack.currentTime = 0;
           currentMusicTrack.play().catch(() => {});
           if (fadeIn) {
-            fadeMusicTo(config.volume, INVINCIBLE_MUSIC_FADE_SECONDS);
+            fadeMusicTo(config.volume, mode === "invincible" ? INVINCIBLE_MUSIC_FADE_SECONDS : NORMAL_MUSIC_FADE_SECONDS);
           }
           scheduleMusicStallCheck();
         }
@@ -1493,6 +1498,7 @@
         Object.values(musicTracks).forEach((track) => {
           track.pause();
           track.currentTime = 0;
+          track.playbackRate = 1;
         });
         currentMusicTrack = musicTracks.normal;
         musicMode = "normal";
@@ -2714,8 +2720,13 @@
         }
 
         for (let i = swallowBulges.length - 1; i >= 0; i -= 1) {
-          swallowBulges[i].pos += BULGE_SPEED_SEGMENTS * dt;
-          if (swallowBulges[i].pos > snake.length + BULGE_WIDTH_SEGMENTS) {
+          const bulge = swallowBulges[i];
+          bulge.pos += BULGE_SPEED_SEGMENTS * dt;
+          while (bulge.growth > 0 && bulge.pos >= snake.length - 1) {
+            extendTail();
+            bulge.growth -= 1;
+          }
+          if (bulge.pos > snake.length + BULGE_WIDTH_SEGMENTS) {
             swallowBulges.splice(i, 1);
           }
         }
@@ -2955,20 +2966,9 @@
         }
       }
 
-      function growSnake() {
+      function extendTail() {
         const tail = snake[snake.length - 1];
-        const beforeTail = snake[snake.length - 2] || tail;
-        const dx = tail.x - beforeTail.x;
-        const dy = tail.y - beforeTail.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const gap = segmentGap();
-
-        for (let i = 0; i < GROWTH_PER_BITE; i += 1) {
-          snake.push({
-            x: tail.x + (dx / len) * gap * (i + 1),
-            y: tail.y + (dy / len) * gap * (i + 1)
-          });
-        }
+        snake.push({ x: tail.x, y: tail.y });
       }
 
       function advanceHead(next, frameScale = 1) {
@@ -3155,7 +3155,7 @@
           gulpAt = pulse;
           squintUntil = pulse + SQUINT_DURATION;
           if (swallowBulges.length < BULGE_LIMIT) {
-            swallowBulges.push({ pos: 0 });
+            swallowBulges.push({ pos: 0, growth: 0 });
           }
           grantInvincibility();
           clearBonusFood();
@@ -3293,10 +3293,27 @@
         setStatus(`Invincible ending ${invincibilityWarningRemaining().toFixed(1)}`, "#ffd166");
       }
 
+      function updateWarningMusicEffect() {
+        if (musicMode !== "invincible" || !currentMusicTrack) return;
+        const total = INVINCIBLE_ENDING_WARNING_MS / 1000;
+        const progress = clamp(1 - invincibilityWarningRemaining() / total, 0, 1);
+        const config = musicConfig("invincible");
+        if (!musicFadeFrame) {
+          currentMusicTrack.volume = lerp(config.volume, config.volume * WARNING_MUSIC_DUCK_FACTOR, progress);
+        }
+        if ("preservesPitch" in currentMusicTrack) {
+          currentMusicTrack.preservesPitch = false;
+        }
+        currentMusicTrack.playbackRate = lerp(1, WARNING_MUSIC_MIN_RATE, progress);
+      }
+
       function finishInvincibility() {
         invincibleWarningUntil = 0;
         invincibleBitesRemaining = 0;
         pendingInvincibleBites = 0;
+        if (musicTracks && musicTracks.invincible) {
+          musicTracks.invincible.playbackRate = 1;
+        }
         switchMusic("normal");
         setStatus("Vulnerable", "#ffcf5a");
         maybePlaceBonusFood();
@@ -3305,6 +3322,7 @@
       function updateInvincibilityWarning() {
         if (!invincibleWarningUntil) return;
         if (isInvincibilityWarningActive()) {
+          updateWarningMusicEffect();
           setStatus(`Invincible ending ${invincibilityWarningRemaining().toFixed(1)}`, "#ffd166");
           return;
         }
@@ -3327,13 +3345,14 @@
         const points = basePoints * combo.multiplier;
         score += points;
         scoreEl.textContent = score;
-        growSnake();
         spawnBiteBurst(eatenFood, eatenTheme);
         spawnScorePopup(eatenFood, points, combo.multiplier, eatenTheme);
         gulpAt = pulse;
         squintUntil = pulse + SQUINT_DURATION;
         if (swallowBulges.length < BULGE_LIMIT) {
-          swallowBulges.push({ pos: 0 });
+          swallowBulges.push({ pos: 0, growth: GROWTH_PER_BITE });
+        } else {
+          swallowBulges[swallowBulges.length - 1].growth += GROWTH_PER_BITE;
         }
         biteSelfGraceDistance = Math.max(biteSelfGraceDistance, biteSelfGraceLimit());
         foodLevelBites += 1;
@@ -4176,6 +4195,50 @@
         ctx.globalAlpha = 1;
       }
 
+      function drawTailFin(deadTime) {
+        if (!snake || snake.length < 2) return;
+        const tail = snake[snake.length - 1];
+        let anchor = null;
+        for (let i = snake.length - 2; i >= 0; i -= 1) {
+          if (dist(snake[i], tail) > 1) {
+            anchor = snake[i];
+            break;
+          }
+        }
+        const angle = anchor
+          ? Math.atan2(tail.y - anchor.y, tail.x - anchor.x)
+          : Math.atan2(-heading.y, -heading.x);
+        const size = bodyRadius();
+        const length = size * 4.4;
+        const width = size * 1.5;
+        const grayMix = deadTime >= 0 ? clamp((deadTime - DEATH_GRAY_STAGGER) / 0.25, 0, 1) : 0;
+        const flutter = deadTime >= 0 ? 0 : Math.sin(pulse * 3.2) * length * 0.18;
+
+        ctx.save();
+        ctx.translate(tail.x, tail.y);
+        ctx.rotate(angle);
+        ctx.fillStyle = `hsl(180 ${Math.round(62 - grayMix * 54)}% ${Math.round(34 - grayMix * 6)}%)`;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(length * 0.45, -width, length, flutter);
+        ctx.quadraticCurveTo(length * 0.45, width, 0, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "#ffd166";
+        ctx.lineWidth = Math.max(1, size * 0.18);
+        ctx.globalAlpha = 0.55 * (1 - grayMix);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(226, 251, 255, 0.18)";
+        ctx.lineWidth = Math.max(1, size * 0.12);
+        ctx.globalAlpha = 1 - grayMix * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(size * 0.4, 0);
+        ctx.quadraticCurveTo(length * 0.5, flutter * 0.4, length * 0.82, flutter * 0.8);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       function drawSnake() {
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
@@ -4190,6 +4253,7 @@
         }
 
         const deadTime = deathAt >= 0 ? pulse - deathAt : -1;
+        drawTailFin(deadTime);
 
         for (let i = snake.length - 1; i > 0; i -= 1) {
           const part = snake[i];
