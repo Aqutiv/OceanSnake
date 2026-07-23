@@ -554,17 +554,7 @@
     }
 
     @media (max-width: 760px), (pointer: coarse) {
-      html,
-      body {
-        position: fixed;
-        inset: 0;
-        height: 100%;
-        overflow: hidden;
-      }
-
       .shell {
-        height: 100vh;
-        height: 100svh;
         grid-template-rows: auto minmax(0, 1fr) auto;
         gap: 8px;
         padding:
@@ -1377,6 +1367,7 @@
       let musicFadeFrame;
       let musicStarted;
       let invincibleMusicUnlocked;
+      let invincibleMusicUnlocking;
       let ambientNodes;
       let musicStallTimer;
       let introShown = readStoredFlag(INTRO_SEEN_STORAGE_KEY);
@@ -1797,18 +1788,31 @@
       }
 
       function unlockInvincibleMusicTrack() {
-        if (invincibleMusicUnlocked || muted) return;
+        if (invincibleMusicUnlocked || invincibleMusicUnlocking || muted) return;
         ensureMusicTracks();
         const track = musicTracks.invincible;
+        invincibleMusicUnlocking = true;
+        // iOS needs this media element to play during a user gesture before it
+        // can be started later by gameplay. Silence both the element and its
+        // Web Audio route so the pre-unlock can never leak into normal play.
         track.muted = true;
+        setMusicVolume(track, 0);
         track.play()
           .then(() => {
+            invincibleMusicUnlocked = true;
+            invincibleMusicUnlocking = false;
+            // The magic fish can be collected before play() settles on iOS.
+            // Do not stop the track if it has become the active music meanwhile.
+            if (currentMusicTrack === track && musicMode === "invincible") return;
             track.pause();
             track.currentTime = 0;
             track.muted = muted;
-            invincibleMusicUnlocked = true;
           })
           .catch(() => {
+            invincibleMusicUnlocking = false;
+            if (currentMusicTrack === track && musicMode === "invincible") return;
+            track.pause();
+            track.currentTime = 0;
             track.muted = muted;
           });
       }
