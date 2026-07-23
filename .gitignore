@@ -10,3 +10,5 @@ node_modules/
 public/game/
 debug.log
 .claude/
+AGENTS.md
+ocean-snake-sites.tar.gz
