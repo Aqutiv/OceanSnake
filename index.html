@@ -1182,6 +1182,28 @@
       const INTRO_TITLE = "How to Play";
       const DESKTOP_INTRO_COPY = "Steer by dragging, with WASD or the arrow keys, or with a controller.\nDualSense: Cross starts, Options pauses, Square restarts, and Triangle toggles haptics; enable its touchpad for relative drag steering.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for a spree of bites or up to 30 seconds and appear every 10-20 bites.";
       const MOBILE_INTRO_COPY = "Steer with the joystick, by dragging in the arena, or with a connected controller.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for a spree of bites or up to 30 seconds and appear every 10-20 bites.";
+      const GAME_OVER_MESSAGES = [
+        "The reef reclaims another hunter.",
+        "The deep keeps what it defeats.",
+        "The tide closes over a fallen predator.",
+        "Another trail goes cold beneath the waves.",
+        "Even the sharpest fangs meet the deep.",
+        "The current carries another legend away.",
+        "The reef has claimed its tribute.",
+        "One wrong turn, and the ocean wins.",
+        "The hunter vanishes into the blue.",
+        "The current outlasts every serpent.",
+        "Another shadow fades beneath the surface.",
+        "The sea shows no mercy to the swift.",
+        "The hunt ends where the reef begins.",
+        "The ocean swallows another ambition.",
+        "No fang is sharper than fate.",
+        "The reef remembers every reckless turn.",
+        "The deep grows quiet once more.",
+        "A bold hunter becomes reef lore.",
+        "The tide erases another perfect trail.",
+        "The ocean waits. The ocean wins."
+      ];
       const FOOD_THEMES = [
         { main: "#ffcf5a", accent: "#ff7a59", glow: "rgba(255, 207, 90, 0.72)" },
         { main: "#7ee7ff", accent: "#35d6b4", glow: "rgba(126, 231, 255, 0.72)" },
@@ -4044,7 +4066,8 @@
         best = Math.max(best, score);
         localStorage.setItem(BEST_SCORE_STORAGE_KEY, String(best));
         bestEl.textContent = best;
-        setOverlay("gameover", "Game Over", "The reef reclaims another hunter.");
+        const gameOverMessage = GAME_OVER_MESSAGES[Math.floor(Math.random() * GAME_OVER_MESSAGES.length)];
+        setOverlay("gameover", "Game Over", gameOverMessage);
         setStatus("Collision", "#ff5f6d");
         stopMusic();
         playHaptic("collision");
