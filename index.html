@@ -48,6 +48,7 @@
         radial-gradient(circle at 18% 10%, rgba(126, 231, 255, 0.16), transparent 29%),
         radial-gradient(circle at 82% 18%, rgba(53, 214, 180, 0.12), transparent 27%),
         linear-gradient(160deg, #02101b 0%, #05304b 48%, #020812 100%);
+      background-color: #06324b;
       color: var(--ink);
       font-family: Sora, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
@@ -314,6 +315,10 @@
     .center-state.state-pause .state-settings {
       display: grid;
       gap: 12px;
+    }
+
+    .center-state.state-pause.visible {
+      pointer-events: auto;
     }
 
     .volume-row {
@@ -2572,6 +2577,7 @@
       }
 
       function activateGamepadButton() {
+        if (paused) return;
         lastControlSource = "gamepad";
         if (gameState === "over") {
           reset();
@@ -2901,6 +2907,7 @@
         if (event.button !== undefined && event.button !== 0) return;
         event.preventDefault();
         event.stopPropagation?.();
+        if (paused) return;
 
         if (gameState === "over") {
           reset();
@@ -3353,6 +3360,7 @@
         if (joystickActive || controllerTouchState.active) return;
         if (event.button !== undefined && event.button !== 0) return;
         event.preventDefault();
+        if (paused) return;
         lastControlSource = "device";
         const point = getCanvasPoint(event);
         const touchControl = isTouchControl(event);
@@ -3389,11 +3397,8 @@
       }
 
       function startPlaying() {
+        if (paused) return false;
         unlockSfxAudio();
-
-        if (paused) {
-          setPaused(false);
-        }
 
         if (gameState === "ready") {
           gameState = "playing";
@@ -3401,6 +3406,7 @@
           beep(360, 0.04, "triangle", 0.045);
         }
         startMusic();
+        return true;
       }
 
       function steerToward(point) {
@@ -3437,6 +3443,7 @@
 
         if (!direction) return;
         event.preventDefault();
+        if (paused) return;
         if (dragging || joystickActive || controllerTouchState.active) return;
         lastControlSource = "device";
 
