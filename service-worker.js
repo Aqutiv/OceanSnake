@@ -1,4 +1,4 @@
-const CACHE_NAME = "ocean-snake-pwa-v13";
+const CACHE_NAME = "ocean-snake-pwa-v14";
 
 const CORE_ASSETS = [
   "./",
@@ -7,6 +7,8 @@ const CORE_ASSETS = [
   "./assets/ocean-snake-logo-header.png",
   "./assets/ocean-snake-logo.ico",
   "./assets/ocean-snake-logo.png",
+  "./assets/music-floating-cities.mp3",
+  "./assets/music-voxel-revolution.mp3",
   "./assets/ocean-snake-mascot-source.png",
   "./assets/pwa-icon-192.png",
   "./assets/pwa-icon-512.png",

@@ -947,9 +947,9 @@
       const INVINCIBLE_DURATION_MS = 30000;
       const INVINCIBLE_ENDING_WARNING_MS = 2000;
       const TOUCH_HEAD_GRAB_RADIUS = 68;
-      const BACKGROUND_MUSIC_URL = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Floating%20Cities.mp3";
+      const BACKGROUND_MUSIC_URL = "assets/music-floating-cities.mp3";
       const BACKGROUND_MUSIC_CREDIT = "Floating Cities by Kevin MacLeod (incompetech.com), licensed CC BY 4.0";
-      const INVINCIBLE_MUSIC_URL = "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Voxel%20Revolution.mp3";
+      const INVINCIBLE_MUSIC_URL = "assets/music-voxel-revolution.mp3";
       const INVINCIBLE_MUSIC_CREDIT = "Voxel Revolution by Kevin MacLeod (incompetech.com), licensed CC BY 4.0";
       const INVINCIBLE_MUSIC_FADE_SECONDS = 0.85;
       const NORMAL_MUSIC_FADE_SECONDS = 1.6;
@@ -974,31 +974,70 @@
       const DUALSENSE_USB_OUTPUT_REPORT_SIZE = 47;
       const DUALSENSE_OUTPUT_FLAG0_HAPTICS_SELECT = 0x02;
       const DUALSENSE_OUTPUT_FLAG0_COMPATIBLE_VIBRATION = 0x01;
+      function rumbleEnvelope({ attackMs = 20, peakStrong = 0, peakWeak = 0, decayMs = 200, stepMs = 24, floor = 0.04, gapAfterMs = 0 }) {
+        const segments = [{ duration: attackMs, gap: 0, strongMagnitude: peakStrong, weakMagnitude: peakWeak }];
+        let strong = peakStrong;
+        let weak = peakWeak;
+        const steps = Math.max(1, Math.round(decayMs / stepMs));
+        for (let i = 0; i < steps; i += 1) {
+          strong *= 0.62;
+          weak *= 0.62;
+          if (strong < floor && weak < floor) break;
+          segments.push({
+            duration: stepMs,
+            gap: 0,
+            strongMagnitude: strong < floor ? 0 : strong,
+            weakMagnitude: weak < floor ? 0 : weak
+          });
+        }
+        if (gapAfterMs > 0) segments[segments.length - 1].gap = gapAfterMs;
+        return segments;
+      }
+
+      function biteRumble(comboCount) {
+        const count = Math.max(1, comboCount || 1);
+        const weakPeak = Math.min(0.72, 0.3 + 0.07 * Math.min(count, 6));
+        const strongPeak = count >= 3 ? Math.min(0.35, 0.05 * (count - 2)) : 0;
+        const main = rumbleEnvelope({ attackMs: 18, peakStrong: strongPeak, peakWeak: weakPeak, decayMs: 90, stepMs: 20 });
+        if (count >= 4) {
+          return [{ duration: 20, gap: 26, strongMagnitude: 0, weakMagnitude: 0.22 }].concat(main);
+        }
+        return main;
+      }
+
       const HAPTIC_PATTERNS = Object.freeze({
-        confirmation: [
-          { duration: 90, gap: 45, strongMagnitude: 0.32, weakMagnitude: 0.58 },
-          { duration: 120, gap: 0, strongMagnitude: 0.68, weakMagnitude: 0.34 }
-        ],
-        bite: [
-          { duration: 42, gap: 0, strongMagnitude: 0.06, weakMagnitude: 0.34 }
-        ],
-        combo: [
-          { duration: 34, gap: 34, strongMagnitude: 0.08, weakMagnitude: 0.32 },
-          { duration: 54, gap: 0, strongMagnitude: 0.28, weakMagnitude: 0.58 }
-        ],
-        reward: [
-          { duration: 38, gap: 34, strongMagnitude: 0.12, weakMagnitude: 0.36 },
-          { duration: 52, gap: 34, strongMagnitude: 0.32, weakMagnitude: 0.58 },
-          { duration: 82, gap: 0, strongMagnitude: 0.58, weakMagnitude: 0.78 }
-        ],
-        warning: [
-          { duration: 72, gap: 48, strongMagnitude: 0.48, weakMagnitude: 0.12 },
-          { duration: 96, gap: 0, strongMagnitude: 0.68, weakMagnitude: 0.18 }
-        ],
-        collision: [
-          { duration: 110, gap: 48, strongMagnitude: 1, weakMagnitude: 0.24 },
-          { duration: 150, gap: 0, strongMagnitude: 0.62, weakMagnitude: 0.5 }
-        ]
+        confirmation: () =>
+          rumbleEnvelope({ attackMs: 26, peakStrong: 0.3, peakWeak: 0.6, decayMs: 120, gapAfterMs: 40 }).concat(
+            rumbleEnvelope({ attackMs: 30, peakStrong: 0.68, peakWeak: 0.34, decayMs: 150 })
+          ),
+        bite: (context = {}) => biteRumble(context.combo || 1),
+        combo: (context = {}) => biteRumble(context.combo || 2),
+        swallow: () => rumbleEnvelope({ attackMs: 22, peakStrong: 0.22, peakWeak: 0.08, decayMs: 70, stepMs: 22 }),
+        reward: (context = {}) => {
+          const peak = Math.min(1, 0.78 + (context.level || 0) * 0.02);
+          return [
+            { duration: 36, gap: 30, strongMagnitude: 0.1, weakMagnitude: 0.34 },
+            { duration: 50, gap: 30, strongMagnitude: 0.3, weakMagnitude: 0.56 }
+          ].concat(rumbleEnvelope({ attackMs: 30, peakStrong: peak, peakWeak: peak, decayMs: 220 }));
+        },
+        warning: () =>
+          rumbleEnvelope({ attackMs: 24, peakStrong: 0.5, peakWeak: 0.12, decayMs: 110, gapAfterMs: 46 }).concat(
+            rumbleEnvelope({ attackMs: 28, peakStrong: 0.7, peakWeak: 0.18, decayMs: 140 })
+          ),
+        collision: () =>
+          rumbleEnvelope({ attackMs: 24, peakStrong: 1, peakWeak: 0.3, decayMs: 360, gapAfterMs: 70 }).concat([
+            { duration: 70, gap: 110, strongMagnitude: 0.35, weakMagnitude: 0.12 },
+            { duration: 90, gap: 0, strongMagnitude: 0.18, weakMagnitude: 0.08 }
+          ])
+      });
+      const HAPTIC_PRIORITIES = Object.freeze({
+        collision: 3,
+        reward: 2,
+        confirmation: 2,
+        warning: 2,
+        combo: 1,
+        bite: 1,
+        swallow: 1
       });
       const BUILD_NUMBER = 19;
       const BUILD_DATE = "20260717.0003";
@@ -1171,6 +1210,7 @@
       let audioCtx;
       let sfxUnlocked;
       let musicTracks;
+      let musicRoutes;
       let currentMusicTrack;
       let musicMode;
       let musicFadeFrame;
@@ -1519,12 +1559,47 @@
             };
       }
 
+      // iOS/WebKit ignores writes to HTMLMediaElement.volume, so music volume,
+      // fades, and ducking must go through a Web Audio gain node instead. The
+      // tracks are same-origin, so routing them through the context is allowed.
+      function ensureMusicRouting() {
+        if (!audioCtx || !musicTracks) return;
+        musicRoutes = musicRoutes || new Map();
+        Object.values(musicTracks).forEach((track) => {
+          if (musicRoutes.has(track)) return;
+          try {
+            const source = audioCtx.createMediaElementSource(track);
+            const gain = audioCtx.createGain();
+            gain.gain.value = musicVolumeOf(track);
+            source.connect(gain).connect(audioCtx.destination);
+            track.volume = 1;
+            musicRoutes.set(track, { source, gain });
+          } catch (error) {}
+        });
+      }
+
+      function musicVolumeOf(track) {
+        return typeof track.oceanSnakeVolume === "number" ? track.oceanSnakeVolume : track.volume;
+      }
+
+      function setMusicVolume(track, volume) {
+        track.oceanSnakeVolume = volume;
+        const route = musicRoutes && musicRoutes.get(track);
+        if (route) {
+          try {
+            route.gain.gain.value = volume;
+            return;
+          } catch (error) {}
+        }
+        track.volume = volume;
+      }
+
       function createMusicTrack(mode) {
         const config = musicConfig(mode);
         const track = new Audio(config.url);
         track.loop = true;
         track.preload = "auto";
-        track.volume = config.volume;
+        setMusicVolume(track, config.volume);
         track.title = config.credit;
         track.setAttribute("playsinline", "");
         track.setAttribute("webkit-playsinline", "");
@@ -1572,7 +1647,7 @@
         cancelMusicFade();
 
         const track = currentMusicTrack;
-        const startVolume = track.volume;
+        const startVolume = musicVolumeOf(track);
         const startTime = performance.now();
         const duration = seconds * 1000;
 
@@ -1581,7 +1656,7 @@
 
           const progress = Math.min(1, (now - startTime) / duration);
           const eased = 1 - Math.pow(1 - progress, 3);
-          track.volume = lerp(startVolume, volume, eased);
+          setMusicVolume(track, lerp(startVolume, volume, eased));
 
           if (progress < 1) {
             musicFadeFrame = requestAnimationFrame(step);
@@ -1604,7 +1679,7 @@
         }
 
         currentMusicTrack = musicTracks[mode];
-        currentMusicTrack.volume = fadeIn ? 0 : config.volume;
+        setMusicVolume(currentMusicTrack, fadeIn ? 0 : config.volume);
         currentMusicTrack.muted = muted;
         musicMode = mode;
       }
@@ -1616,6 +1691,7 @@
         const fadeIn = canPlay && (mode === "invincible" || fromInvincible);
         const config = musicConfig(mode);
         ensureMusicTrack(mode, fadeIn);
+        ensureMusicRouting();
         currentMusicTrack.playbackRate = 1;
         if (canPlay) {
           currentMusicTrack.currentTime = 0;
@@ -1631,6 +1707,7 @@
       function startMusic() {
         musicStarted = true;
         ensureMusicTracks();
+        ensureMusicRouting();
         unlockInvincibleMusicTrack();
         if (muted || paused || document.hidden) return;
         ensureMusicTrack();
@@ -1657,14 +1734,16 @@
 
       function resumeGameAudio() {
         if (muted || paused || document.hidden) return;
+        ensureAudioContext();
         resumeAudioContext();
         if (!musicStarted) return;
         ensureMusicTrack();
+        ensureMusicRouting();
         if (musicMode !== "invincible") {
           unlockInvincibleMusicTrack();
         }
         currentMusicTrack.muted = false;
-        currentMusicTrack.volume = musicConfig().volume;
+        setMusicVolume(currentMusicTrack, musicConfig().volume);
         currentMusicTrack.play().catch(() => {});
         scheduleMusicStallCheck();
         syncAmbientFallback();
@@ -2018,6 +2097,12 @@
       }
 
       let hapticSequence = 0;
+      let activeHapticPriority = 0;
+      let activeHapticUntil = 0;
+      let ambientHapticLevel = 0;
+      let ambientHapticSentAt = 0;
+      let ambientGamepadUntil = 0;
+      let ambientZeroSent = true;
 
       function hapticDelay(duration) {
         return new Promise((resolve) => window.setTimeout(resolve, duration));
@@ -2028,11 +2113,28 @@
       }
 
       function hapticPatternForDevice(pattern) {
+        // Merge envelope micro-steps into on/off pulses the Vibration API can
+        // express: contiguous segments above the threshold become one "on"
+        // span; sub-threshold segments and gaps extend the following "off".
         const vibration = [];
-        pattern.forEach((segment, index) => {
-          vibration.push(segment.duration);
-          if (segment.gap > 0 && index < pattern.length - 1) vibration.push(segment.gap);
+        let onMs = 0;
+        let offMs = 0;
+        pattern.forEach((segment) => {
+          const active = segment.strongMagnitude + segment.weakMagnitude >= 0.12;
+          if (active) {
+            if (offMs > 0) {
+              vibration.push(Math.round(onMs), Math.round(offMs));
+              onMs = 0;
+              offMs = 0;
+            }
+            onMs += segment.duration;
+            offMs += segment.gap;
+          } else {
+            offMs += segment.duration + segment.gap;
+          }
         });
+        if (onMs > 0) vibration.push(Math.round(onMs));
+        if (!vibration.length) return 0;
         return vibration.length === 1 ? vibration[0] : vibration;
       }
 
@@ -2052,6 +2154,9 @@
 
       function stopHaptics() {
         hapticSequence += 1;
+        activeHapticPriority = 0;
+        activeHapticUntil = 0;
+        ambientZeroSent = true;
 
         if (deviceHapticsAvailable()) {
           try {
@@ -2118,11 +2223,20 @@
         return true;
       }
 
-      function playHaptic(event) {
-        const pattern = HAPTIC_PATTERNS[event];
-        if (!pattern || !hapticsEnabled || paused || document.hidden) return false;
+      function playHaptic(event, context = {}) {
+        const source = HAPTIC_PATTERNS[event];
+        if (!source || !hapticsEnabled || paused || document.hidden) return false;
+        const pattern = typeof source === "function" ? source(context) : source;
+        if (!pattern || !pattern.length) return false;
+
+        const priority = HAPTIC_PRIORITIES[event] || 1;
+        const now = performance.now();
+        if (now < activeHapticUntil && priority < activeHapticPriority) return false;
 
         const sequence = ++hapticSequence;
+        activeHapticPriority = priority;
+        activeHapticUntil =
+          now + pattern.reduce((total, segment) => total + segment.duration + segment.gap, 0);
 
         // Once the USB DualSense has been authorized, use its deterministic
         // WebHID output path. Chrome can expose a Gamepad actuator that accepts
@@ -2142,6 +2256,67 @@
           return navigator.vibrate(hapticPatternForDevice(pattern));
         } catch (error) {
           return false;
+        }
+      }
+
+      function updateAmbientHaptics() {
+        const dualSense = enhancedDualSenseReady();
+        const actuator = dualSense ? null : gamepadHapticActuator(selectGamepad());
+        if (!dualSense && !actuator) return;
+
+        const now = performance.now();
+        if (now < activeHapticUntil) {
+          // A one-shot effect owns the motors; it ends with its own zero.
+          ambientZeroSent = true;
+          return;
+        }
+
+        let weakTarget = 0;
+        let strongTarget = 0;
+        if (hapticsEnabled && !paused && !document.hidden && gameState === "playing") {
+          if (isInvincibilityWarningActive()) {
+            const total = INVINCIBLE_ENDING_WARNING_MS / 1000;
+            const beatInterval = 0.25 + 0.35 * clamp(invincibilityWarningRemaining() / total, 0, 1);
+            const beatPhase = (pulse % beatInterval) / beatInterval;
+            strongTarget = beatPhase < 0.3 ? 0.25 : 0;
+          } else if (isInvincibleMode()) {
+            weakTarget = 0.05 + 0.03 * Math.sin(pulse * 3);
+          }
+        }
+
+        if (weakTarget <= 0 && strongTarget <= 0) {
+          if (!ambientZeroSent) {
+            ambientZeroSent = true;
+            ambientHapticLevel = 0;
+            if (dualSense) sendDualSenseUsbRumble(0, 0).catch(() => {});
+          }
+          return;
+        }
+        ambientZeroSent = false;
+
+        if (dualSense) {
+          const level = Math.round(clamp(weakTarget, 0, 1) * 255) * 256 + Math.round(clamp(strongTarget, 0, 1) * 255);
+          if (level !== ambientHapticLevel && now - ambientHapticSentAt >= 90) {
+            ambientHapticLevel = level;
+            ambientHapticSentAt = now;
+            sendDualSenseUsbRumble(strongTarget, weakTarget).catch(() => {});
+          }
+          return;
+        }
+
+        if (now >= ambientGamepadUntil) {
+          ambientGamepadUntil = now + 180;
+          try {
+            const attempt = actuator.playEffect("dual-rumble", {
+              startDelay: 0,
+              duration: 220,
+              strongMagnitude: strongTarget,
+              weakMagnitude: weakTarget
+            });
+            if (attempt && typeof attempt.catch === "function") attempt.catch(() => {});
+          } catch (error) {
+            // Haptics are always optional.
+          }
         }
       }
 
@@ -2921,6 +3096,10 @@
           const bulge = swallowBulges[i];
           bulge.pos += BULGE_SPEED_SEGMENTS * dt;
           while (bulge.growth > 0 && bulge.pos >= snake.length - 1) {
+            if (!bulge.thunked) {
+              bulge.thunked = true;
+              playHaptic("swallow");
+            }
             extendTail();
             bulge.growth -= 1;
           }
@@ -3389,7 +3568,7 @@
         pendingInvincibleBites = 0;
         switchMusic("invincible");
         setStatus(`Invincible ${invincibleBitesRemaining}`, "#c9a7ff");
-        playHaptic("reward");
+        playHaptic("reward", { level: foodLevel });
         rewardBiteSound();
       }
 
@@ -3414,7 +3593,7 @@
       }
 
       function resumeAudioContext() {
-        if (!audioCtx || audioCtx.state !== "suspended") return null;
+        if (!audioCtx || audioCtx.state === "running" || audioCtx.state === "closed") return null;
         try {
           const resumeAttempt = audioCtx.resume();
           if (resumeAttempt && typeof resumeAttempt.catch === "function") {
@@ -3503,7 +3682,7 @@
         const progress = clamp(1 - invincibilityWarningRemaining() / total, 0, 1);
         const config = musicConfig("invincible");
         if (!musicFadeFrame) {
-          currentMusicTrack.volume = lerp(config.volume, config.volume * WARNING_MUSIC_DUCK_FACTOR, progress);
+          setMusicVolume(currentMusicTrack, lerp(config.volume, config.volume * WARNING_MUSIC_DUCK_FACTOR, progress));
         }
         if ("preservesPitch" in currentMusicTrack) {
           currentMusicTrack.preservesPitch = false;
@@ -3591,10 +3770,10 @@
           setStatus(levelUp ? "Color up" : comboStatus(combo, points), currentFoodTheme().main);
         }
         if (levelUp) {
-          playHaptic("reward");
+          playHaptic("reward", { level: foodLevel });
           rewardBiteSound(combo);
         } else {
-          playHaptic(combo.count > 1 ? "combo" : "bite");
+          playHaptic(combo.count > 1 ? "combo" : "bite", { combo: combo.count });
           snackBite(combo);
         }
       }
@@ -5200,6 +5379,7 @@
         frameDeltaSeconds = dt;
         pulse += dt;
         pollGamepad();
+        updateAmbientHaptics();
         if (!paused) {
           expireComboIfNeeded();
           updateInvincibilityWarning();

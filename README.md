@@ -15,8 +15,8 @@ You can try a live playable version of this game here: https://html.cafe/x726e33
 - Optional USB DualSense touchpad steering in Chromium browsers
 - Pause, mute, haptics, and restart controls with keyboard shortcuts
 - Local best-score and settings persistence
-- Synthesized ambient music fallback when streaming audio is unavailable
-- Local image assets in `assets/`
+- Locally hosted music routed through Web Audio gain nodes (volume control works on iOS), with a synthesized ambient fallback if the tracks fail to load
+- Local image and music assets in `assets/`
 - HTML.cafe deployment script with optional asset inlining and WebP optimization
 
 ## Project Structure
