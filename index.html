@@ -302,6 +302,116 @@
       white-space: pre-line;
     }
 
+    .state-settings {
+      display: none;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line-soft);
+      pointer-events: auto;
+    }
+
+    .center-state.state-pause .state-settings {
+      display: grid;
+      gap: 12px;
+    }
+
+    .volume-row {
+      display: grid;
+      grid-template-columns: 82px 1fr 44px;
+      align-items: center;
+      gap: 10px;
+      cursor: default;
+    }
+
+    .volume-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .volume-label svg {
+      width: 15px;
+      height: 15px;
+      color: var(--accent);
+      flex: none;
+    }
+
+    .volume-value {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+
+    .volume-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 26px;
+      margin: 0;
+      background: transparent;
+      cursor: pointer;
+      --fill: 100%;
+    }
+
+    .volume-slider:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+      border-radius: 999px;
+    }
+
+    .volume-slider::-webkit-slider-runnable-track {
+      height: 6px;
+      border-radius: 999px;
+      background:
+        linear-gradient(90deg, rgba(53, 214, 180, 0.9), var(--accent) var(--fill), transparent var(--fill)),
+        rgba(255, 255, 255, 0.1);
+      box-shadow: inset 0 0 0 1px rgba(126, 231, 255, 0.16);
+    }
+
+    .volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      margin-top: -5px;
+      border: none;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #d9f7ff, var(--accent) 65%);
+      box-shadow:
+        0 0 0 4px rgba(126, 231, 255, 0.16),
+        0 0 12px rgba(126, 231, 255, 0.55);
+    }
+
+    .volume-slider::-moz-range-track {
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+      box-shadow: inset 0 0 0 1px rgba(126, 231, 255, 0.16);
+    }
+
+    .volume-slider::-moz-range-progress {
+      height: 6px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(53, 214, 180, 0.9), var(--accent));
+    }
+
+    .volume-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border: none;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #d9f7ff, var(--accent) 65%);
+      box-shadow:
+        0 0 0 4px rgba(126, 231, 255, 0.16),
+        0 0 12px rgba(126, 231, 255, 0.55);
+    }
+
     .state-score {
       display: none;
     }
@@ -781,6 +891,31 @@
           </div>
           <h2 id="stateTitle">Ready</h2>
           <p id="stateCopy">The first bite is waiting.</p>
+          <div class="state-settings" role="group" aria-label="Audio settings">
+            <label class="volume-row" for="musicVolumeSlider">
+              <span class="volume-label">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M9 18V5l12-2v13"></path>
+                  <circle cx="6" cy="18" r="3"></circle>
+                  <circle cx="18" cy="16" r="3"></circle>
+                </svg>
+                Music
+              </span>
+              <input type="range" class="volume-slider" id="musicVolumeSlider" min="0" max="100" step="1" value="100" aria-label="Music volume">
+              <span class="volume-value" id="musicVolumeValue">100%</span>
+            </label>
+            <label class="volume-row" for="sfxVolumeSlider">
+              <span class="volume-label">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M11 5 6 9H3v6h3l5 4V5z"></path>
+                  <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+                </svg>
+                SFX
+              </span>
+              <input type="range" class="volume-slider" id="sfxVolumeSlider" min="0" max="100" step="1" value="100" aria-label="Sound effects volume">
+              <span class="volume-value" id="sfxVolumeValue">100%</span>
+            </label>
+          </div>
           <div class="state-score" aria-hidden="true">
             <span class="pill">Score<strong id="finalScore">0</strong></span>
             <span class="pill best">Best<strong id="finalBest">0</strong></span>
@@ -845,6 +980,10 @@
       const centerState = document.getElementById("centerState");
       const stateTitle = document.getElementById("stateTitle");
       const stateCopy = document.getElementById("stateCopy");
+      const musicVolumeSlider = document.getElementById("musicVolumeSlider");
+      const musicVolumeValue = document.getElementById("musicVolumeValue");
+      const sfxVolumeSlider = document.getElementById("sfxVolumeSlider");
+      const sfxVolumeValue = document.getElementById("sfxVolumeValue");
       const finalScoreEl = document.getElementById("finalScore");
       const finalBestEl = document.getElementById("finalBest");
       const statusText = document.getElementById("statusText");
@@ -957,10 +1096,13 @@
       const WARNING_MUSIC_MIN_RATE = 0.82;
       const AMBIENT_FALLBACK_VOLUME = 0.05;
       const MUSIC_STALL_TIMEOUT_MS = 5000;
+      const MUSIC_PREVIEW_LINGER_MS = 1200;
       const BEST_SCORE_STORAGE_KEY = "oceanSnakeBest";
       const MUTED_STORAGE_KEY = "oceanSnakeMuted";
       const INTRO_SEEN_STORAGE_KEY = "oceanSnakeIntroSeen";
       const HAPTICS_STORAGE_KEY = "oceanSnakeHapticsEnabled";
+      const MUSIC_VOLUME_STORAGE_KEY = "oceanSnakeMusicVolume";
+      const SFX_VOLUME_STORAGE_KEY = "oceanSnakeSfxVolume";
       const SONY_VENDOR_ID = 0x054c;
       const DUALSENSE_PRODUCT_ID = 0x0ce6;
       const DUALSENSE_TOUCH_WIDTH = 1920;
@@ -1139,6 +1281,21 @@
           localStorage.setItem(key, value ? "1" : "0");
         } catch (error) {}
       };
+      const readStoredLevel = (key) => {
+        try {
+          const raw = localStorage.getItem(key);
+          if (raw === null) return 1;
+          const value = Number(raw);
+          return Number.isFinite(value) ? clamp(value, 0, 1) : 1;
+        } catch (error) {
+          return 1;
+        }
+      };
+      const writeStoredLevel = (key, value) => {
+        try {
+          localStorage.setItem(key, String(value));
+        } catch (error) {}
+      };
 
       let snake;
       let food;
@@ -1202,6 +1359,9 @@
       let paused;
       let pauseStartedAt = 0;
       let muted = readStoredFlag(MUTED_STORAGE_KEY);
+      let musicVolumeLevel = readStoredLevel(MUSIC_VOLUME_STORAGE_KEY);
+      let sfxVolumeLevel = readStoredLevel(SFX_VOLUME_STORAGE_KEY);
+      let sfxMasterGain;
       let hapticsEnabled = localStorage.getItem(HAPTICS_STORAGE_KEY) !== "false";
       let lastControlSource = "device";
       let lastFrame;
@@ -1570,7 +1730,7 @@
           try {
             const source = audioCtx.createMediaElementSource(track);
             const gain = audioCtx.createGain();
-            gain.gain.value = musicVolumeOf(track);
+            gain.gain.value = musicVolumeOf(track) * musicVolumeLevel;
             source.connect(gain).connect(audioCtx.destination);
             track.volume = 1;
             musicRoutes.set(track, { source, gain });
@@ -1584,14 +1744,30 @@
 
       function setMusicVolume(track, volume) {
         track.oceanSnakeVolume = volume;
+        const applied = volume * musicVolumeLevel;
         const route = musicRoutes && musicRoutes.get(track);
         if (route) {
           try {
-            route.gain.gain.value = volume;
+            route.gain.gain.value = applied;
             return;
           } catch (error) {}
         }
-        track.volume = volume;
+        track.volume = applied;
+      }
+
+      function applyMusicVolumeLevel() {
+        if (musicTracks) {
+          Object.values(musicTracks).forEach((track) => setMusicVolume(track, musicVolumeOf(track)));
+        }
+        if (ambientNodes && audioCtx) {
+          try {
+            ambientNodes.master.gain.setTargetAtTime(
+              Math.max(0.0001, AMBIENT_FALLBACK_VOLUME * musicVolumeLevel),
+              audioCtx.currentTime,
+              0.12
+            );
+          } catch (error) {}
+        }
       }
 
       function createMusicTrack(mode) {
@@ -1816,7 +1992,7 @@
           const now = audioCtx.currentTime;
           const master = audioCtx.createGain();
           master.gain.setValueAtTime(0.0001, now);
-          master.gain.exponentialRampToValueAtTime(AMBIENT_FALLBACK_VOLUME, now + 2.4);
+          master.gain.exponentialRampToValueAtTime(Math.max(0.0001, AMBIENT_FALLBACK_VOLUME * musicVolumeLevel), now + 2.4);
 
           const filter = audioCtx.createBiquadFilter();
           filter.type = "lowpass";
@@ -3605,6 +3781,27 @@
         }
       }
 
+      // Shared output bus for every sound effect so the SFX volume slider can
+      // scale them all in one place. Music routes bypass this on purpose.
+      function sfxDestination() {
+        if (!audioCtx) return null;
+        if (!sfxMasterGain) {
+          sfxMasterGain = audioCtx.createGain();
+          sfxMasterGain.gain.value = sfxVolumeLevel;
+          sfxMasterGain.connect(audioCtx.destination);
+        }
+        return sfxMasterGain;
+      }
+
+      function applySfxVolumeLevel() {
+        if (!sfxMasterGain || !audioCtx) return;
+        try {
+          sfxMasterGain.gain.setTargetAtTime(sfxVolumeLevel, audioCtx.currentTime, 0.03);
+        } catch (error) {
+          sfxMasterGain.gain.value = sfxVolumeLevel;
+        }
+      }
+
       function unlockSfxAudio() {
         const ctx = ensureAudioContext();
         if (!ctx) return;
@@ -3620,7 +3817,7 @@
           osc.frequency.setValueAtTime(40, now);
           gain.gain.setValueAtTime(0.0001, now);
           gain.gain.exponentialRampToValueAtTime(0.00001, now + 0.03);
-          osc.connect(gain).connect(ctx.destination);
+          osc.connect(gain).connect(sfxDestination());
           osc.start(now);
           osc.stop(now + 0.035);
           sfxUnlocked = true;
@@ -3643,7 +3840,7 @@
           const now = audioCtx.currentTime;
           const master = audioCtx.createGain();
           master.gain.setValueAtTime(0.42, now);
-          master.connect(audioCtx.destination);
+          master.connect(sfxDestination());
 
           [880, 740, 554].forEach((frequency, index) => {
             const start = now + index * 0.48;
@@ -3853,7 +4050,7 @@
           osc.frequency.value = frequency;
           gain.gain.setValueAtTime(volume, audioCtx.currentTime);
           gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-          osc.connect(gain).connect(audioCtx.destination);
+          osc.connect(gain).connect(sfxDestination());
           osc.start();
           osc.stop(audioCtx.currentTime + duration);
         } catch (error) {
@@ -3876,7 +4073,7 @@
           compressor.attack.setValueAtTime(0.003, now);
           compressor.release.setValueAtTime(0.16, now);
           master.gain.setValueAtTime(0.72, now);
-          master.connect(compressor).connect(audioCtx.destination);
+          master.connect(compressor).connect(sfxDestination());
 
           const fall = audioCtx.createOscillator();
           const fallGain = audioCtx.createGain();
@@ -3947,7 +4144,7 @@
           compressor.attack.setValueAtTime(0.004, now);
           compressor.release.setValueAtTime(0.08, now);
           master.gain.setValueAtTime(0.76, now);
-          master.connect(compressor).connect(audioCtx.destination);
+          master.connect(compressor).connect(sfxDestination());
 
           const crunchBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.075, audioCtx.sampleRate);
           const samples = crunchBuffer.getChannelData(0);
@@ -4036,7 +4233,7 @@
           compressor.attack.setValueAtTime(0.006, now);
           compressor.release.setValueAtTime(0.16, now);
           master.gain.setValueAtTime(0.72, now);
-          master.connect(compressor).connect(audioCtx.destination);
+          master.connect(compressor).connect(sfxDestination());
 
           const notes = [523.25, 659.25, 783.99, 1046.5];
           notes.forEach((frequency, index) => {
@@ -5415,6 +5612,69 @@
         syncMusicMute();
       }
 
+      let musicPreviewTimer = null;
+      let musicPreviewTrack = null;
+
+      function musicShouldBePlaying() {
+        return musicStarted && !muted && !paused && !document.hidden;
+      }
+
+      function endMusicPreview() {
+        if (musicPreviewTimer) {
+          clearTimeout(musicPreviewTimer);
+          musicPreviewTimer = null;
+        }
+        const track = musicPreviewTrack;
+        musicPreviewTrack = null;
+        if (!track || musicShouldBePlaying()) return;
+        track.pause();
+      }
+
+      // While the pause menu's music slider is dragged, play the current track
+      // so the user hears the level live; pause it again once the drag settles.
+      function previewMusicVolume() {
+        if (muted) return;
+        if (musicShouldBePlaying()) return;
+        ensureMusicTracks();
+        ensureAudioContext();
+        resumeAudioContext();
+        ensureMusicRouting();
+        const track = currentMusicTrack || musicTracks[musicMode || "normal"];
+        if (!track) return;
+        track.muted = false;
+        if (track.paused) {
+          track.play().catch(() => {});
+        }
+        musicPreviewTrack = track;
+        if (musicPreviewTimer) clearTimeout(musicPreviewTimer);
+        musicPreviewTimer = setTimeout(() => {
+          musicPreviewTimer = null;
+          endMusicPreview();
+        }, MUSIC_PREVIEW_LINGER_MS);
+      }
+
+      function syncVolumeSliderUI(slider, valueEl, level) {
+        const percent = Math.round(level * 100);
+        slider.value = String(percent);
+        slider.style.setProperty("--fill", `${percent}%`);
+        valueEl.textContent = `${percent}%`;
+      }
+
+      function handleMusicVolumeInput() {
+        musicVolumeLevel = clamp(Number(musicVolumeSlider.value) / 100, 0, 1);
+        writeStoredLevel(MUSIC_VOLUME_STORAGE_KEY, musicVolumeLevel);
+        syncVolumeSliderUI(musicVolumeSlider, musicVolumeValue, musicVolumeLevel);
+        applyMusicVolumeLevel();
+        previewMusicVolume();
+      }
+
+      function handleSfxVolumeInput() {
+        sfxVolumeLevel = clamp(Number(sfxVolumeSlider.value) / 100, 0, 1);
+        writeStoredLevel(SFX_VOLUME_STORAGE_KEY, sfxVolumeLevel);
+        syncVolumeSliderUI(sfxVolumeSlider, sfxVolumeValue, sfxVolumeLevel);
+        applySfxVolumeLevel();
+      }
+
       function toggleHaptics() {
         hapticsEnabled = !hapticsEnabled;
         try {
@@ -5427,6 +5687,17 @@
 
       pauseBtn.addEventListener("click", togglePause);
       muteBtn.addEventListener("click", toggleMute);
+      musicVolumeSlider.addEventListener("input", handleMusicVolumeInput);
+      sfxVolumeSlider.addEventListener("input", handleSfxVolumeInput);
+      // Give an audible preview of the chosen SFX level once the drag settles.
+      sfxVolumeSlider.addEventListener("change", () => beep(520, 0.08, "triangle", 0.06));
+      [musicVolumeSlider, sfxVolumeSlider].forEach((slider) => {
+        // Keep slider interaction from steering the snake or unpausing the game.
+        slider.addEventListener("keydown", (event) => event.stopPropagation());
+        slider.addEventListener("pointerdown", (event) => event.stopPropagation());
+      });
+      syncVolumeSliderUI(musicVolumeSlider, musicVolumeValue, musicVolumeLevel);
+      syncVolumeSliderUI(sfxVolumeSlider, sfxVolumeValue, sfxVolumeLevel);
       hapticsBtn.addEventListener("click", toggleHaptics);
       dualSenseBtn.addEventListener("click", requestOrTestDualSenseDevice);
       restartBtn.addEventListener("click", reset);
