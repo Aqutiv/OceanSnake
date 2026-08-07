@@ -27,6 +27,7 @@ You can try a live playable version of this game here: https://html.cafe/x726e33
 |-- manifest.webmanifest
 |-- service-worker.js
 |-- assets/
+|   |-- ocean-snake-idle-loop-256.webp
 |   |-- ocean-snake-logo-header.png
 |   |-- ocean-snake-logo.ico
 |   |-- ocean-snake-logo.png

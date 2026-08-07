@@ -1,10 +1,10 @@
-const CACHE_NAME = "ocean-snake-pwa-v22";
+const CACHE_NAME = "ocean-snake-pwa-v28";
 
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./assets/ocean-snake-logo-header.png",
+  "./assets/ocean-snake-idle-loop-256.webp",
   "./assets/ocean-snake-logo.ico",
   "./assets/ocean-snake-logo.png",
   "./assets/music-floating-cities.mp3",
