@@ -12,6 +12,7 @@ test("Sites build includes the complete static PWA", async () => {
     "dist/client/game/index.html",
     "dist/client/game/manifest.webmanifest",
     "dist/client/game/service-worker.js",
+    "dist/client/game/assets/ocean-snake-idle-loop-256.webp",
     "dist/client/game/assets/pwa-icon-192.png",
   ];
 
@@ -22,5 +23,7 @@ test("Sites build includes the complete static PWA", async () => {
   ]);
 
   assert.match(gameHtml, /<link rel="manifest" href="manifest\.webmanifest">/);
+  assert.match(gameHtml, /src="assets\/ocean-snake-idle-loop-256\.webp"/);
+  assert.match(serviceWorker, /"\.\/assets\/ocean-snake-idle-loop-256\.webp"/);
   assert.match(serviceWorker, /"\.\/assets\/pwa-icon-192\.png"/);
 });
