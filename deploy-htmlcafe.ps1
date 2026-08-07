@@ -68,6 +68,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$KeepOriginalPattern = @(
+  "assets/ocean-snake-idle-loop-256.webp"
+  $KeepOriginalPattern
+) | Select-Object -Unique
 $script:InlineAssetCache = @{}
 $script:ResolvedImageOptimizerPython = $null
 $script:ResolvedFfmpegPath = $null

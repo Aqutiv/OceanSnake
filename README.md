@@ -181,6 +181,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy-htmlcafe.ps1 -Optim
 ```
 
 Image optimization requires Python with Pillow and WebP support. The local `deploy-webp.bat` wrapper can point at a known Python runtime.
+The animated header mascot is always kept in its original WebP form so image optimization preserves every frame and its timing.
 
 ## Git Hygiene
 

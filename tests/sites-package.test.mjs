@@ -27,3 +27,12 @@ test("Sites build includes the complete static PWA", async () => {
   assert.match(serviceWorker, /"\.\/assets\/ocean-snake-idle-loop-256\.webp"/);
   assert.match(serviceWorker, /"\.\/assets\/pwa-icon-192\.png"/);
 });
+
+test("HTML.cafe image optimization preserves the animated mascot", async () => {
+  const deployScript = await readFile(resolve(root, "deploy-htmlcafe.ps1"), "utf8");
+
+  assert.match(
+    deployScript,
+    /\$KeepOriginalPattern = @\([\s\S]*?"assets\/ocean-snake-idle-loop-256\.webp"[\s\S]*?\$KeepOriginalPattern[\s\S]*?\) \| Select-Object -Unique/,
+  );
+});
