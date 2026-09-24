@@ -745,6 +745,7 @@
           0 0 calc(var(--joy-power) * 18px) rgba(255, 207, 90, 0.45);
         transform: translate(0, 0);
         transition: transform 120ms ease;
+        will-change: transform;
       }
 
       .joystick.active .joystick-thumb {
@@ -1062,6 +1063,7 @@
       const GLASS_STREAK_ALPHAS = [0.04, 0.025];
       const BITE_BURST_PARTICLES = 18;
       const BITE_BURST_LIFE = 0.62;
+      const GLOW_CLIP_GRID = 64;
       const SCORE_POPUP_LIFE = 0.9;
       const SCORE_POPUP_LIMIT = 12;
       const SEGMENT_GAP = 16;
@@ -1177,8 +1179,8 @@
         bite: 1,
         swallow: 1
       });
-      const BUILD_NUMBER = 19;
-      const BUILD_DATE = "20260717.0003";
+      const BUILD_NUMBER = 20;
+      const BUILD_DATE = "20260924.0001";
       const INTRO_TITLE = "How to Play";
       const DESKTOP_INTRO_COPY = "Steer by dragging, with WASD or the arrow keys, or with a controller.\nDualSense: Cross starts, Options pauses, Square restarts, and Triangle toggles haptics; enable its touchpad for relative drag steering.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for a spree of bites or up to 30 seconds and appear every 10-20 bites.";
       const MOBILE_INTRO_COPY = "Steer with the joystick, by dragging in the arena, or with a connected controller.\nEat fish quickly to grow, shift colors, and build combo multipliers.\nAvoid walls and your own body.\nMagic fish grant invincibility for a spree of bites or up to 30 seconds and appear every 10-20 bites.";
@@ -1345,6 +1347,7 @@
       let joystickActive;
       let joystickVector;
       let joystickPower;
+      let joystickRect = null;
       let gamepadIndex = null;
       let gamepadActive = false;
       let gamepadVector = { x: 0, y: 0 };
@@ -1370,9 +1373,11 @@
         lastTimestamp: 0
       };
       let dualSenseDevice = null;
+      let dualSenseButtonState = -1;
       let dualSenseConnectionType = null;
       let dualSenseMutePressed = false;
       let resizeFrame;
+      let mobileLayout = Boolean(MOBILE_LAYOUT_QUERY.matches);
       let renderDpr = 1;
       let paused;
       let pauseStartedAt = 0;
@@ -1382,6 +1387,8 @@
       let sfxMasterGain;
       let hapticsEnabled = localStorage.getItem(HAPTICS_STORAGE_KEY) !== "false";
       let lastControlSource = "device";
+      let statusCopy = null;
+      let statusColor = null;
       let lastFrame;
       let frameDeltaSeconds = MAX_SIMULATION_STEP_SECONDS;
       let pulse;
@@ -1411,6 +1418,10 @@
       let targetArenaPalette;
       let arenaPaletteDirty;
       let arenaGradients;
+      const arenaLayers = {
+        base: { canvas: null, ready: false, version: null, size: "", seenVersion: null, seenSize: "" },
+        vignette: { canvas: null, ready: false, version: null, size: "", seenVersion: null, seenSize: "" }
+      };
       let causticsTile;
       let bgFish;
       let nextFishSchoolAt;
@@ -1420,6 +1431,7 @@
       let fishVariantKey;
       let bonusFishVariant;
       let swallowBulges;
+      const segmentColorCache = new Map();
       let gulpAt;
       let squintUntil;
       let nextBlinkAt;
@@ -1537,6 +1549,9 @@
       }
 
       function setStatus(copy, color) {
+        if (copy === statusCopy && color === statusColor) return;
+        statusCopy = copy;
+        statusColor = color;
         statusText.textContent = copy;
         statusDot.style.background = color;
         statusDot.style.boxShadow = `0 0 12px ${color}`;
@@ -1567,8 +1582,16 @@
           : '<rect x="7" y="4" width="10" height="16" rx="2"></rect><path d="m4 4 16 16"></path>';
       }
 
+      // Collision and movement loops ask for the layout once per snake segment,
+      // and MediaQueryList.matches re-evaluates the query on every read, so the
+      // result is cached and refreshed when the layout can change.
+      function refreshMobileLayout() {
+        mobileLayout = Boolean(MOBILE_LAYOUT_QUERY.matches);
+        return mobileLayout;
+      }
+
       function isMobileLayout() {
-        return Boolean(MOBILE_LAYOUT_QUERY.matches);
+        return mobileLayout;
       }
 
       function isTouchControl(event) {
@@ -1680,7 +1703,7 @@
 
       function syncArenaSize() {
         const rect = canvas.getBoundingClientRect();
-        const next = isMobileLayout()
+        const next = refreshMobileLayout()
           ? {
               width: Math.max(1, Math.round(rect.width)),
               height: Math.max(1, Math.round(rect.height))
@@ -1717,6 +1740,7 @@
       }
 
       function scheduleArenaSync() {
+        joystickRect = null;
         if (resizeFrame) cancelAnimationFrame(resizeFrame);
         resizeFrame = requestAnimationFrame(() => {
           resizeFrame = null;
@@ -2099,6 +2123,7 @@
       }
 
       function resetJoystick() {
+        joystickRect = null;
         joystickActive = false;
         joystickPointerId = null;
         joystickVector = { x: 0, y: 0 };
@@ -2274,6 +2299,9 @@
       function updateDualSenseButton(gamepad = selectGamepad()) {
         const connected = enhancedDualSenseReady();
         const available = controllerCapabilities.webHid && (connected || isDualSenseGamepad(gamepad));
+        const buttonState = (available ? 2 : 0) + (connected ? 1 : 0);
+        if (buttonState === dualSenseButtonState) return;
+        dualSenseButtonState = buttonState;
         dualSenseBtn.hidden = !available;
         dualSenseBtn.setAttribute("aria-pressed", String(connected));
         dualSenseBtn.setAttribute(
@@ -2467,9 +2495,9 @@
         }
       }
 
-      function updateAmbientHaptics() {
+      function updateAmbientHaptics(gamepad = selectGamepad()) {
         const dualSense = enhancedDualSenseReady();
-        const actuator = dualSense ? null : gamepadHapticActuator(selectGamepad());
+        const actuator = dualSense ? null : gamepadHapticActuator(gamepad);
         if (!dualSense && !actuator) return;
 
         const now = performance.now();
@@ -2657,8 +2685,7 @@
         return processControllerTouches("gamepad-touch", normalized);
       }
 
-      function pollGamepad() {
-        const gamepad = selectGamepad();
+      function pollGamepad(gamepad = selectGamepad()) {
         if (!gamepad) {
           resetGamepadControl(true);
           resetControllerTouch(true, "gamepad-touch");
@@ -2892,7 +2919,7 @@
       }
 
       function setJoystickFromEvent(event) {
-        const rect = joystick.getBoundingClientRect();
+        const rect = joystickRect || joystick.getBoundingClientRect();
         const centerX = rect.left + rect.width * 0.5;
         const centerY = rect.top + rect.height * 0.5;
         const maxDistance = Math.max(1, Math.min(rect.width, rect.height) * 0.36);
@@ -2946,6 +2973,9 @@
         }
 
         startPlaying();
+        // The joystick does not move while held, so measure it once per drag
+        // instead of forcing a style recalc on every pointermove.
+        joystickRect = joystick.getBoundingClientRect();
         setJoystickFromEvent(event);
         setStatus("Joystick", "#8bd3ff");
       }
@@ -2980,13 +3010,20 @@
         let candidate;
         let attempts = 0;
         const radius = foodRadius();
+        const clearance = foodBodyClearance();
+        const clearanceSq = clearance * clearance;
+        const blocked = (part) => {
+          const dx = candidate.x - part.x;
+          const dy = candidate.y - part.y;
+          return dx * dx + dy * dy < clearanceSq;
+        };
         do {
           candidate = {
             x: rnd(radius + 24, ARENA.width - radius - 24),
             y: rnd(radius + 24, ARENA.height - radius - 24)
           };
           attempts += 1;
-        } while (attempts < 300 && snake.some((part) => dist(candidate, part) < foodBodyClearance()));
+        } while (attempts < 300 && snake.some(blocked));
         food = candidate;
         foodVelocity = unitFromAngle(rnd(0, Math.PI * 2));
       }
@@ -2997,6 +3034,14 @@
         let candidate;
         let attempts = 0;
         const radius = bonusRadius();
+        const bodyClearance = bonusBodyClearance();
+        const bodyClearanceSq = bodyClearance * bodyClearance;
+        const foodClearance = bonusFoodClearance();
+        const blocked = (part) => {
+          const dx = candidate.x - part.x;
+          const dy = candidate.y - part.y;
+          return dx * dx + dy * dy < bodyClearanceSq;
+        };
         do {
           candidate = {
             x: rnd(radius + 34, ARENA.width - radius - 34),
@@ -3005,7 +3050,7 @@
           attempts += 1;
         } while (
           attempts < 300 &&
-          (snake.some((part) => dist(candidate, part) < bonusBodyClearance()) || dist(candidate, food) < bonusFoodClearance())
+          (snake.some(blocked) || dist(candidate, food) < foodClearance)
         );
 
         bonusFood = candidate;
@@ -3268,6 +3313,7 @@
       function updateBiteParticles(dt) {
         if (!biteParticles || !biteParticles.length) return;
 
+        const scale = snakeScale();
         for (let i = biteParticles.length - 1; i >= 0; i -= 1) {
           const particle = biteParticles[i];
           particle.age += dt;
@@ -3277,7 +3323,7 @@
           }
 
           particle.vx *= 1 - Math.min(0.92, dt * 1.8);
-          particle.vy = particle.vy * (1 - Math.min(0.9, dt * 1.25)) - 16 * snakeScale() * dt;
+          particle.vy = particle.vy * (1 - Math.min(0.9, dt * 1.25)) - 16 * scale * dt;
           particle.x += particle.vx * dt + Math.sin(pulse * 8 + particle.wobble) * 8 * dt;
           particle.y += particle.vy * dt;
         }
@@ -3367,6 +3413,7 @@
       function updateScorePopups(dt) {
         if (!scorePopups || !scorePopups.length) return;
 
+        const scale = snakeScale();
         for (let i = scorePopups.length - 1; i >= 0; i -= 1) {
           const popup = scorePopups[i];
           popup.age += dt;
@@ -3374,7 +3421,7 @@
             scorePopups.splice(i, 1);
             continue;
           }
-          popup.y -= (34 + 20 * (1 - popup.age / popup.life)) * snakeScale() * dt;
+          popup.y -= (34 + 20 * (1 - popup.age / popup.life)) * scale * dt;
         }
       }
 
@@ -3543,7 +3590,7 @@
           const follower = snake[i];
           const dx = leader.x - follower.x;
           const dy = leader.y - follower.y;
-          const gap = Math.hypot(dx, dy);
+          const gap = Math.sqrt(dx * dx + dy * dy);
 
           if (gap > gapTarget) {
             const pull = (gap - gapTarget) / gap;
@@ -3658,11 +3705,13 @@
           foodVelocity.y *= -1;
         }
 
+        const bodyHitDistance = radius + bodyRadius();
+        const bodyHitDistanceSq = bodyHitDistance * bodyHitDistance;
         for (let i = 1; i < snake.length; i += 1) {
           const part = snake[i];
-          if (dist(food, part) <= radius + bodyRadius()) {
-            const dx = food.x - part.x;
-            const dy = food.y - part.y;
+          const dx = food.x - part.x;
+          const dy = food.y - part.y;
+          if (dx * dx + dy * dy <= bodyHitDistanceSq) {
             const len = Math.hypot(dx, dy) || 1;
             foodVelocity = {
               x: dx / len,
@@ -3915,7 +3964,7 @@
         if (!musicFadeFrame) {
           setMusicVolume(currentMusicTrack, lerp(config.volume, config.volume * WARNING_MUSIC_DUCK_FACTOR, progress));
         }
-        if ("preservesPitch" in currentMusicTrack) {
+        if ("preservesPitch" in currentMusicTrack && currentMusicTrack.preservesPitch) {
           currentMusicTrack.preservesPitch = false;
         }
         currentMusicTrack.playbackRate = lerp(1, WARNING_MUSIC_MIN_RATE, progress);
@@ -4031,18 +4080,23 @@
 
       function checkCollision() {
         const head = snake[0];
+        const headSize = headRadius();
         if (
-          head.x <= headRadius() ||
-          head.y <= headRadius() ||
-          head.x >= ARENA.width - headRadius() ||
-          head.y >= ARENA.height - headRadius()
+          head.x <= headSize ||
+          head.y <= headSize ||
+          head.x >= ARENA.width - headSize ||
+          head.y >= ARENA.height - headSize
         ) {
           return true;
         }
 
         if (!isInvincibleMode() && biteSelfGraceDistance <= 0) {
+          const hitDistance = headSize + bodyRadius() - 5 * snakeScale();
+          const hitDistanceSq = hitDistance * hitDistance;
           for (let i = SELF_GRACE; i < snake.length; i += 1) {
-            if (dist(head, snake[i]) < headRadius() + bodyRadius() - 5 * snakeScale()) {
+            const dx = head.x - snake[i].x;
+            const dy = head.y - snake[i].y;
+            if (dx * dx + dy * dy < hitDistanceSq) {
               return true;
             }
           }
@@ -4411,6 +4465,79 @@
         arenaPaletteDirty = false;
       }
 
+      // The gradient backdrop and the vignette only change with the palette or
+      // the canvas size, yet were refilled across the whole arena every frame.
+      // Once their inputs have held for a frame (so not while the palette fades
+      // after a level-up), each is rendered at device resolution into its own
+      // canvas and blitted 1:1.
+      function cachedArenaLayer(name, version, paint) {
+        const entry = arenaLayers[name];
+        const size = `${canvas.width}x${canvas.height}@${renderDpr}`;
+        const settled = entry.seenVersion === version && entry.seenSize === size;
+        entry.seenVersion = version;
+        entry.seenSize = size;
+        if (entry.ready && entry.version === version && entry.size === size) return entry;
+        if (!settled) return null;
+        if (!entry.canvas) entry.canvas = document.createElement("canvas");
+        const layerCanvas = entry.canvas;
+        if (layerCanvas.width !== canvas.width || layerCanvas.height !== canvas.height) {
+          layerCanvas.width = canvas.width;
+          layerCanvas.height = canvas.height;
+        }
+        const layerCtx = layerCanvas.getContext("2d");
+        layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+        layerCtx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
+        layerCtx.setTransform(renderDpr, 0, 0, renderDpr, 0, 0);
+        paint(layerCtx);
+        entry.ready = true;
+        entry.version = version;
+        entry.size = size;
+        return entry;
+      }
+
+      function drawArenaLayer(entry, paint) {
+        const fullWidth = Math.min(canvas.width, Math.floor(ARENA.width * renderDpr));
+        const fullHeight = Math.min(canvas.height, Math.floor(ARENA.height * renderDpr));
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(entry.canvas, 0, 0, fullWidth, fullHeight, 0, 0, fullWidth, fullHeight);
+        if (fullWidth < canvas.width || fullHeight < canvas.height) {
+          // The arena only partly covers the last device column or row, which
+          // therefore blends with whatever the previous frame left there, so
+          // those pixels are painted directly as before.
+          ctx.beginPath();
+          ctx.rect(fullWidth, 0, canvas.width - fullWidth, canvas.height);
+          ctx.rect(0, fullHeight, fullWidth, canvas.height - fullHeight);
+          ctx.clip();
+          ctx.setTransform(renderDpr, 0, 0, renderDpr, 0, 0);
+          paint(ctx);
+        }
+        ctx.restore();
+      }
+
+      function invalidateArenaLayers() {
+        Object.values(arenaLayers).forEach((entry) => {
+          entry.ready = false;
+        });
+        causticsTile = null;
+      }
+
+      function paintArenaBase(target) {
+        target.fillStyle = arenaGradients.bg;
+        target.fillRect(0, 0, ARENA.width, ARENA.height);
+        target.save();
+        target.globalCompositeOperation = "screen";
+        target.globalAlpha = 0.2;
+        target.fillStyle = arenaGradients.glow;
+        target.fillRect(0, 0, ARENA.width, ARENA.height);
+        target.restore();
+      }
+
+      function paintArenaVignette(target) {
+        target.fillStyle = arenaGradients.vignette;
+        target.fillRect(0, 0, ARENA.width, ARENA.height);
+      }
+
       function drawBgFish() {
         if (!bgFish || !bgFish.length) return;
         ctx.save();
@@ -4489,7 +4616,7 @@
         ctx.restore();
       }
 
-      function drawArena() {
+      function drawArena(shaken = false) {
         const pal = arenaPalette || ARENA_PALETTES[0];
         if (!causticsTile) createCausticsTile();
         ensureArenaGradients(pal);
@@ -4497,16 +4624,18 @@
         const flowMotion = oceanFlow ? Math.hypot(oceanFlow.x, oceanFlow.y) / OCEAN_BASE_SPEED : 1;
         const cameraX = cameraFlow ? cameraFlow.x : 0;
         const cameraY = cameraFlow ? cameraFlow.y : 0;
-        ctx.fillStyle = arenaGradients.bg;
-        ctx.fillRect(0, 0, ARENA.width, ARENA.height);
+        // The death shake offsets the whole arena, so draw it directly then.
+        const useLayerCache = !shaken;
+        const base = useLayerCache && cachedArenaLayer("base", arenaGradients, paintArenaBase);
+        if (base) {
+          drawArenaLayer(base, paintArenaBase);
+        } else {
+          paintArenaBase(ctx);
+        }
 
         ctx.save();
         ctx.globalCompositeOperation = "screen";
         const cameraMagnitude = Math.hypot(cameraX, cameraY);
-
-        ctx.globalAlpha = 0.2;
-        ctx.fillStyle = arenaGradients.glow;
-        ctx.fillRect(0, 0, ARENA.width, ARENA.height);
 
         const causticsBand = ARENA.height * CAUSTICS_BAND_FRACTION;
         const causticsLayers = mobile ? 1 : CAUSTICS_LAYER_SCALES.length;
@@ -4544,6 +4673,9 @@
 
         const beamCount = mobile ? GOD_RAY_COUNT_MOBILE : GOD_RAY_COUNT;
         const beamSpacing = (ARENA.width + 180) / beamCount;
+        // The ray gradients are fully transparent below the fade line, so each
+        // beam is filled only down to it, along its original edges.
+        const beamFade = GOD_RAY_FADE_FRACTION;
         for (let i = 0; i < beamCount; i += 1) {
           const beamX = (oceanLight.x + i * beamSpacing + Math.sin(pulse * 0.13 + i) * 18) % (ARENA.width + 180) - 90;
           const lean = oceanLight.lean * ARENA.height + Math.sin(pulse * 0.18 + i) * 16;
@@ -4552,8 +4684,8 @@
           ctx.beginPath();
           ctx.moveTo(beamX, 0);
           ctx.lineTo(beamX + 80, 0);
-          ctx.lineTo(beamX + lean + 190, ARENA.height);
-          ctx.lineTo(beamX + lean - 90, ARENA.height);
+          ctx.lineTo(beamX + 80 + (lean + 110) * beamFade, ARENA.height * beamFade);
+          ctx.lineTo(beamX + (lean - 90) * beamFade, ARENA.height * beamFade);
           ctx.closePath();
           ctx.fill();
         }
@@ -4594,13 +4726,14 @@
 
         const bubbleCount = mobile ? AQUARIUM_BUBBLE_COUNT_MOBILE : AQUARIUM_BUBBLE_COUNT;
         const bubblerX = ARENA.width * 0.955;
+        const scale = snakeScale();
         ctx.strokeStyle = "rgba(226, 251, 255, 0.82)";
         ctx.lineWidth = 1;
         for (let i = 0; i < bubbleCount; i += 1) {
           const cycle = ARENA.height * 0.88;
           const bubbleY = ARENA.height * 0.94 - ((pulse * 46 + i * ARENA.height * 0.115) % cycle);
           const bubbleX = bubblerX + Math.sin(pulse * 2 + i * 1.7) * 6;
-          const bubbleR = Math.max(1, (1.4 + (i % 3) * 0.8) * snakeScale());
+          const bubbleR = Math.max(1, (1.4 + (i % 3) * 0.8) * scale);
           ctx.globalAlpha = 0.35 * clamp(bubbleY / ARENA.height, 0, 1);
           ctx.beginPath();
           ctx.arc(bubbleX, bubbleY, bubbleR, 0, Math.PI * 2);
@@ -4609,22 +4742,23 @@
         ctx.globalAlpha = 0.5;
         ctx.fillStyle = "rgba(180, 210, 224, 0.6)";
         ctx.beginPath();
-        ctx.arc(bubblerX, ARENA.height * 0.955, Math.max(2, 3 * snakeScale()), 0, Math.PI * 2);
+        ctx.arc(bubblerX, ARENA.height * 0.955, Math.max(2, 3 * scale), 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
+        // The wave lines never touch, so one stroke draws them all.
         ctx.strokeStyle = "rgba(126, 231, 255, 0.06)";
         ctx.lineWidth = 1.4;
+        ctx.beginPath();
         for (let y = 58; y < ARENA.height; y += 58) {
           const wave = Math.sin(pulse * 0.7 + y * 0.025) * 18 * flowMotion;
-          ctx.beginPath();
           for (let x = -24; x <= ARENA.width + 24; x += 24) {
             const py = y + Math.sin(x * 0.015 + pulse * 0.55 + y * 0.02) * 4 + wave * 0.08;
             if (x === -24) ctx.moveTo(x, py);
             else ctx.lineTo(x, py);
           }
-          ctx.stroke();
         }
+        ctx.stroke();
 
         ctx.save();
         ctx.globalAlpha = 0.85 + Math.sin(pulse * 0.35) * 0.15;
@@ -4662,8 +4796,12 @@
         }
 
         ctx.globalAlpha = 1;
-        ctx.fillStyle = arenaGradients.vignette;
-        ctx.fillRect(0, 0, ARENA.width, ARENA.height);
+        const vignette = useLayerCache && cachedArenaLayer("vignette", null, paintArenaVignette);
+        if (vignette) {
+          drawArenaLayer(vignette, paintArenaVignette);
+        } else {
+          paintArenaVignette(ctx);
+        }
 
         ctx.strokeStyle = "rgba(2, 10, 18, 0.9)";
         ctx.lineWidth = 6;
@@ -4732,14 +4870,43 @@
         ctx.closePath();
       }
 
-      function drawFishShape(radius, main, accent, variant, glowColor, glowBlur) {
+      // A fish's derived colors depend only on its variant and base colors, so
+      // build the strings once instead of every frame.
+      function fishColors(variant, main, accent) {
+        const cached = variant.colors;
+        if (cached && cached.main === main && cached.accent === accent) return cached;
         const black = { r: 0, g: 0, b: 0 };
         const white = { r: 255, g: 255, b: 255 };
         const dorsalShade = mixRgb(main, black, 0.38);
         const bellyShade = mixRgb(main, white, 0.35);
+        const colors = {
+          main,
+          accent,
+          fin: rgbaStr(accent, variant.finAlpha),
+          finRim: rgbaStr(mixRgb(accent, black, 0.3), 0.5),
+          dorsal: rgbaStr(dorsalShade, 1),
+          body: rgbaStr(main, 1),
+          belly: rgbaStr(bellyShade, 1),
+          bars: rgbaStr(dorsalShade, 0.35),
+          stripe: rgbaStr(dorsalShade, 0.3),
+          specks: rgbaStr(dorsalShade, 0.4),
+          scales: rgbaStr(mixRgb(main, black, 0.5), 0.22),
+          gill: rgbaStr(dorsalShade, 0.45),
+          gillOuter: rgbaStr(dorsalShade, 0.2),
+          lateralLine: rgbaStr(mixRgb(main, black, 0.45), 0.16),
+          eyeWhite: rgbaStr(bellyShade, 0.95),
+          eyeRim: rgbaStr(mixRgb(main, black, 0.55), 0.8),
+          mouth: rgbaStr(mixRgb(main, black, 0.5), 0.55)
+        };
+        variant.colors = colors;
+        return colors;
+      }
+
+      function drawFishShape(radius, main, accent, variant, glowColor, glowBlur) {
+        const colors = fishColors(variant, main, accent);
         const bodyH = radius * variant.bodyHeight;
-        const finColor = rgbaStr(accent, variant.finAlpha);
-        const finRim = rgbaStr(mixRgb(accent, black, 0.3), 0.5);
+        const finColor = colors.fin;
+        const finRim = colors.finRim;
         const wag = Math.sin(pulse * variant.wagRate + variant.wagPhase) * 0.22;
 
         ctx.save();
@@ -4772,9 +4939,9 @@
         }
 
         const bodyGradient = ctx.createLinearGradient(0, -bodyH, 0, bodyH);
-        bodyGradient.addColorStop(0, rgbaStr(dorsalShade, 1));
-        bodyGradient.addColorStop(0.52, rgbaStr(main, 1));
-        bodyGradient.addColorStop(1, rgbaStr(bellyShade, 1));
+        bodyGradient.addColorStop(0, colors.dorsal);
+        bodyGradient.addColorStop(0.52, colors.body);
+        bodyGradient.addColorStop(1, colors.belly);
         ctx.shadowColor = glowColor;
         ctx.shadowBlur = glowBlur;
         traceFishBody(radius, bodyH);
@@ -4786,17 +4953,17 @@
         traceFishBody(radius, bodyH);
         ctx.clip();
         if (variant.pattern === 1) {
-          ctx.fillStyle = rgbaStr(dorsalShade, 0.35);
+          ctx.fillStyle = colors.bars;
           for (let b = 0; b < variant.patternCount; b += 1) {
             const barX = lerp(-radius * 0.7, radius * 0.75, variant.patternSeeds[b]);
             const barWidth = radius * (0.14 + variant.patternSeeds[5 - b] * 0.08);
             ctx.fillRect(barX - barWidth / 2, -bodyH, barWidth, bodyH * 2);
           }
         } else if (variant.pattern === 2) {
-          ctx.fillStyle = rgbaStr(dorsalShade, 0.3);
+          ctx.fillStyle = colors.stripe;
           ctx.fillRect(-radius, -bodyH * 0.18, radius * 2.35, bodyH * 0.42);
         } else if (variant.pattern === 3) {
-          ctx.fillStyle = rgbaStr(dorsalShade, 0.4);
+          ctx.fillStyle = colors.specks;
           for (let s = 0; s < variant.patternCount + 2; s += 1) {
             const speckX = lerp(-radius * 0.75, radius * 0.8, variant.patternSeeds[s % 6]);
             const speckY = -bodyH * (0.15 + variant.patternSeeds[(s + 2) % 6] * 0.55);
@@ -4806,7 +4973,7 @@
           }
         }
 
-        ctx.strokeStyle = rgbaStr(mixRgb(main, black, 0.5), 0.22);
+        ctx.strokeStyle = colors.scales;
         ctx.lineWidth = Math.max(0.5, radius * 0.045);
         const scaleStep = radius * variant.scaleStep;
         for (let row = 0; row < variant.scaleRows; row += 1) {
@@ -4819,17 +4986,17 @@
           }
         }
 
-        ctx.strokeStyle = rgbaStr(dorsalShade, 0.45);
+        ctx.strokeStyle = colors.gill;
         ctx.lineWidth = Math.max(0.7, radius * 0.06);
         ctx.beginPath();
         ctx.arc(radius * 0.98, 0, radius * 0.52, Math.PI * 0.6, Math.PI * 1.4);
         ctx.stroke();
-        ctx.strokeStyle = rgbaStr(dorsalShade, 0.2);
+        ctx.strokeStyle = colors.gillOuter;
         ctx.beginPath();
         ctx.arc(radius * 1.06, 0, radius * 0.6, Math.PI * 0.68, Math.PI * 1.32);
         ctx.stroke();
 
-        ctx.strokeStyle = rgbaStr(mixRgb(main, black, 0.45), 0.16);
+        ctx.strokeStyle = colors.lateralLine;
         ctx.lineWidth = Math.max(0.5, radius * 0.04);
         ctx.beginPath();
         ctx.moveTo(radius * 0.55, -radius * 0.05);
@@ -4877,11 +5044,11 @@
         ctx.fill();
         ctx.restore();
 
-        ctx.fillStyle = rgbaStr(bellyShade, 0.95);
+        ctx.fillStyle = colors.eyeWhite;
         ctx.beginPath();
         ctx.arc(radius * 0.72, -radius * 0.16, radius * 0.16, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = rgbaStr(mixRgb(main, black, 0.55), 0.8);
+        ctx.strokeStyle = colors.eyeRim;
         ctx.lineWidth = Math.max(0.5, radius * 0.035);
         ctx.stroke();
         ctx.fillStyle = "#03131f";
@@ -4893,7 +5060,7 @@
         ctx.arc(radius * 0.7, -radius * 0.2, Math.max(0.5, radius * 0.035), 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.strokeStyle = rgbaStr(mixRgb(main, black, 0.5), 0.55);
+        ctx.strokeStyle = colors.mouth;
         ctx.lineWidth = Math.max(0.6, radius * 0.045);
         ctx.beginPath();
         ctx.moveTo(radius * 1.32, radius * 0.05);
@@ -4949,16 +5116,44 @@
         ctx.restore();
       }
 
+      // A canvas shadow drawn with any blend mode other than source-over makes
+      // browsers composite the shadow and the shape through offscreen layers as
+      // large as the clip, which is the whole arena unless something narrows it.
+      // That stalled slower devices during bites. Clipping each particle to a
+      // device-pixel box that holds everything its glow reaches keeps those
+      // layers small without changing what gets drawn. GPU blurs sample on a
+      // grid anchored at the layer's corner, so the box snaps to that grid.
+      function clipToParticleGlow(transform, particle, radius) {
+        const scale = Math.max(Math.abs(transform.a), Math.abs(transform.d));
+        const lineReach = particle.bubble ? Math.max(0.8, radius * 0.25) / 2 : 0;
+        const reach = (radius + lineReach) * scale + Math.ceil(radius * 2.4 * 1.5) + 3;
+        const deviceX = transform.a * particle.x + transform.e;
+        const deviceY = transform.d * particle.y + transform.f;
+        const left = Math.floor((deviceX - reach) / GLOW_CLIP_GRID) * GLOW_CLIP_GRID;
+        const top = Math.floor((deviceY - reach) / GLOW_CLIP_GRID) * GLOW_CLIP_GRID;
+        const right = Math.ceil((deviceX + reach) / GLOW_CLIP_GRID) * GLOW_CLIP_GRID;
+        const bottom = Math.ceil((deviceY + reach) / GLOW_CLIP_GRID) * GLOW_CLIP_GRID;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.beginPath();
+        ctx.rect(left, top, right - left, bottom - top);
+        ctx.clip();
+        ctx.setTransform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f);
+      }
+
       function drawBiteParticles() {
         if (!biteParticles || !biteParticles.length) return;
 
         ctx.save();
         ctx.globalCompositeOperation = "screen";
+        const transform = typeof ctx.getTransform === "function" ? ctx.getTransform() : null;
+        const canClip = !!transform && transform.b === 0 && transform.c === 0;
         biteParticles.forEach((particle) => {
           const progress = particle.age / particle.life;
           const alpha = Math.pow(1 - progress, 1.35);
           const radius = lerp(particle.r, particle.maxR, Math.min(1, progress * 1.35));
 
+          ctx.save();
+          if (canClip) clipToParticleGlow(transform, particle, radius);
           ctx.globalAlpha = alpha * (particle.bubble ? 0.72 : 0.9);
           ctx.shadowColor = particle.glow;
           ctx.shadowBlur = radius * 2.4;
@@ -4981,6 +5176,7 @@
             ctx.arc(particle.x, particle.y, radius * (0.62 + progress * 0.18), 0, Math.PI * 2);
             ctx.fill();
           }
+          ctx.restore();
         });
         ctx.restore();
       }
@@ -5028,6 +5224,19 @@
         ctx.globalAlpha = 1;
       }
 
+      // Body segments share a small set of hsl() colors; reuse the exact strings
+      // instead of rebuilding one per segment every frame. All three values are
+      // whole numbers below 128 apart from the hue, so they pack into one key.
+      function segmentColor(hue, saturation, lightness) {
+        const key = (hue * 128 + saturation) * 128 + lightness;
+        let color = segmentColorCache.get(key);
+        if (!color) {
+          color = `hsl(${hue} ${saturation}% ${lightness}%)`;
+          segmentColorCache.set(key, color);
+        }
+        return color;
+      }
+
       function drawTailFin(deadTime) {
         if (!snake || snake.length < 2) return;
         const tail = snake[snake.length - 1];
@@ -5050,7 +5259,7 @@
         ctx.save();
         ctx.translate(tail.x, tail.y);
         ctx.rotate(angle);
-        ctx.fillStyle = `hsl(180 ${Math.round(62 - grayMix * 54)}% ${Math.round(34 - grayMix * 6)}%)`;
+        ctx.fillStyle = segmentColor(180, Math.round(62 - grayMix * 54), Math.round(34 - grayMix * 6));
         ctx.globalAlpha = 0.9;
         ctx.beginPath();
         ctx.moveTo(0, 0);
@@ -5087,6 +5296,7 @@
 
         const deadTime = deathAt >= 0 ? pulse - deathAt : -1;
         drawTailFin(deadTime);
+        const haloColor = invincible ? `rgba(201, 167, 255, ${0.16 + invinciblePulse * 0.16})` : "";
 
         for (let i = snake.length - 1; i > 0; i -= 1) {
           const part = snake[i];
@@ -5104,20 +5314,20 @@
           const grayMix = deadTime >= 0 ? clamp((deadTime - t * DEATH_GRAY_STAGGER) / 0.25, 0, 1) : 0;
 
           if (invincible && i % 2 === 0) {
-            ctx.fillStyle = `rgba(201, 167, 255, ${0.16 + invinciblePulse * 0.16})`;
+            ctx.fillStyle = haloColor;
             ctx.beginPath();
             ctx.arc(part.x, part.y, radius * 1.78, 0, Math.PI * 2);
             ctx.fill();
           }
 
-          ctx.fillStyle = `hsl(${hueMix} ${Math.round(62 - grayMix * 54)}% ${Math.round(34 + (1 - t) * 16 - grayMix * 6)}%)`;
+          ctx.fillStyle = segmentColor(hueMix, Math.round(62 - grayMix * 54), Math.round(34 + (1 - t) * 16 - grayMix * 6));
           ctx.beginPath();
           ctx.arc(part.x, part.y, radius, 0, Math.PI * 2);
           ctx.fill();
 
           if (i % 3 === 1 || i % 7 === 3) {
             const spotSeed = i * 53 + 11;
-            ctx.fillStyle = `hsl(${hueMix + 14} ${Math.round(66 - grayMix * 58)}% ${Math.round(22 - grayMix * 2)}%)`;
+            ctx.fillStyle = segmentColor(hueMix + 14, Math.round(66 - grayMix * 58), Math.round(22 - grayMix * 2));
             ctx.globalAlpha = 0.6;
             ctx.beginPath();
             if (i % 3 === 1) {
@@ -5144,13 +5354,13 @@
             ctx.globalAlpha = 1;
           }
 
-          ctx.strokeStyle = `rgba(214, 244, 228, ${0.1 * (1 - grayMix)})`;
+          ctx.strokeStyle = grayMix > 0 ? `rgba(214, 244, 228, ${0.1 * (1 - grayMix)})` : "rgba(214, 244, 228, 0.1)";
           ctx.lineWidth = Math.max(1, radius * 0.3);
           ctx.beginPath();
           ctx.arc(part.x, part.y, radius * 0.78, Math.PI * 0.35, Math.PI * 0.95);
           ctx.stroke();
 
-          ctx.fillStyle = `rgba(255, 255, 255, ${0.12 * (1 - grayMix)})`;
+          ctx.fillStyle = grayMix > 0 ? `rgba(255, 255, 255, ${0.12 * (1 - grayMix)})` : "rgba(255, 255, 255, 0.12)";
           ctx.beginPath();
           ctx.arc(part.x - radius * 0.28, part.y - radius * 0.32, Math.max(1.5, radius * 0.18), 0, Math.PI * 2);
           ctx.fill();
@@ -5495,7 +5705,7 @@
           ctx.save();
           ctx.translate(Math.sin(deadTime * 68) * amp, Math.cos(deadTime * 83) * amp * 0.7);
         }
-        drawArena();
+        drawArena(shaken);
         drawFood();
         drawBonusFood();
         drawBiteParticles();
@@ -5577,6 +5787,9 @@
         if (document.hidden) {
           pauseForLifecycle();
         } else {
+          // Offscreen layer canvases can lose their pixels while the page is
+          // hidden; rebuilding them costs one frame.
+          invalidateArenaLayers();
           returnFromLifecycle();
         }
       }
@@ -5610,8 +5823,9 @@
         lastFrame = now;
         frameDeltaSeconds = dt;
         pulse += dt;
-        pollGamepad();
-        updateAmbientHaptics();
+        const gamepad = selectGamepad();
+        pollGamepad(gamepad);
+        updateAmbientHaptics(gamepad);
         if (!paused) {
           expireComboIfNeeded();
           updateInvincibilityWarning();
@@ -5741,6 +5955,7 @@
       joystick.addEventListener("pointerup", endJoystick);
       joystick.addEventListener("pointercancel", endJoystick);
       joystick.addEventListener("contextmenu", (event) => event.preventDefault());
+      canvas.addEventListener("contextrestored", invalidateArenaLayers);
       canvas.addEventListener("pointerdown", startDrag);
       canvas.addEventListener("pointermove", moveDrag);
       canvas.addEventListener("pointerup", endDrag);
@@ -5764,7 +5979,10 @@
       window.addEventListener("pagehide", pauseForLifecycle);
       window.addEventListener("pageshow", returnFromLifecycle);
       if (MOBILE_LAYOUT_QUERY.addEventListener) {
-        MOBILE_LAYOUT_QUERY.addEventListener("change", scheduleArenaSync);
+        MOBILE_LAYOUT_QUERY.addEventListener("change", () => {
+          refreshMobileLayout();
+          scheduleArenaSync();
+        });
       }
 
       syncArenaSize();

@@ -100,6 +100,19 @@ ES modules-style code operating on a `<canvas id="game">`. Notable patterns:
 
 When editing gameplay, keep it dependency-free and match the surrounding vanilla-JS idiom.
 
+### Rendering performance
+
+The whole arena is redrawn every frame, so per-draw costs multiply quickly on slow devices:
+
+- `shadowBlur` under any `globalCompositeOperation` other than `source-over` makes browsers
+  composite through offscreen layers as large as the current clip (the whole arena by default).
+  `drawBiteParticles` clips each particle to a device-pixel box around its glow for this reason;
+  do the same for any new glowing draw in `screen` mode.
+- Use `isMobileLayout()` (a cached flag) instead of reading `MOBILE_LAYOUT_QUERY.matches`, which
+  re-evaluates the media query on every read, and keep radius helpers out of per-segment loops.
+- The static arena gradients are cached in `arenaLayers` (`cachedArenaLayer` / `drawArenaLayer`)
+  and blitted 1:1; keep their keys in step with whatever the cached paint depends on.
+
 ## Deployment workflow
 
 - **Order matters:** for each release, commit and push the game change first (GitHub Pages
